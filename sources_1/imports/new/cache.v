@@ -20,16 +20,16 @@ module cache(
 	inout [`WORD_SIZE-1:0] d_dataC,
 
 	// interface wires with I-memory
-	output [`WORD_SIZE-1:0] i_addressM,
-	inout [`FETCH_SIZE-1:0] i_dataM,
 	output i_readM,
 	output i_writeM,
+	output [`WORD_SIZE-1:0] i_addressM,
+	inout [`FETCH_SIZE-1:0] i_dataM,
 
 	//interface wires with D-memory
-	output [`WORD_SIZE-1:0] d_addressM,
-	inout [`FETCH_SIZE-1:0] d_dataM,
 	output d_readM,
 	output d_writeM,
+	output [`WORD_SIZE-1:0] d_addressM,
+	inout [`FETCH_SIZE-1:0] d_dataM,
 
 	// cache hit
 	output i_cache_hit,
@@ -38,8 +38,10 @@ module cache(
 	parameter tagSize = 12; // bit size of tag field in 16 bit address
 	parameter blockNum = 4; // # of cache block
 	parameter blockSize = 64; // Size of one cache block = 4 words(64bits)
-	reg [`WORD_SIZE-1:0] hitCnt; // counter for cache hit
-	reg [`WORD_SIZE-1:0] accessCnt; // counter for memory access
+	reg [`WORD_SIZE-1:0] i_hitCnt; // counter for I-cache hit
+	reg [`WORD_SIZE-1:0] d_hitCnt; // counter for D-cache hit
+	reg [`WORD_SIZE-1:0] i_accessCnt; // counter for I-memory access from datapath
+	reg [`WORD_SIZE-1:0] d_accessCnt; // counter for D-memory access from datapath
 	integer i;
 
 	// cache hit registers
@@ -158,8 +160,8 @@ module cache(
 				{i_readM, i_writeM, d_readM, d_writeM} <= 4'd0;
 				{i_outputDataC, d_outputDataC, i_outputDataM, d_outputDataM} <= {`WORD_SIZE'dz, `WORD_SIZE'dz, `FETCH_SIZE'dz, `FETCH_SIZE'dz};
 			end
-			// reset state
-			{i_state, d_state} <= {RESET, RESET};
+			{i_state, d_state} <= {RESET, RESET}; // reset state
+			{i_accessCnt, d_accessCnt, i_hitCnt, d_hitCnt} <= {`WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0};
 		end
 		else begin
 			{i_state, d_state} <= {i_nextState, d_nextState}; // update current state
