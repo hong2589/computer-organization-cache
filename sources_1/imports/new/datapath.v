@@ -72,23 +72,31 @@ module datapath (
 	wire [`WORD_SIZE-1:0] RF_A_target;
 	wire [`WORD_SIZE-1:0] RF_B_target;
 
-	// IF -> ID
+	// IF stage variables
 	parameter tagLength = 8;
 	parameter btbSize = 256;
 	reg [`WORD_SIZE-1:0] PC_reg; // current PC
+	wire [`WORD_SIZE-1:0] PC;
+	wire predictTaken;
+	wire [`WORD_SIZE-1:0] predictResult;
+	wire [`WORD_SIZE-1:0] selectedPC;
+	wire [`WORD_SIZE-1:0] PC_add_1; // PC + 1
+
+	// ID stage variables
 	reg [`WORD_SIZE-1:0] nextPC_reg; // PC + 1
 	reg [`WORD_SIZE-1:0] predictedPC_reg; // predictedPC from control_predictor
 	reg [`WORD_SIZE-1:0] originalPC_reg; // PC
 	reg [`WORD_SIZE-1:0] inst_reg; // instruction register
-	wire [`WORD_SIZE-1:0] PC;
-	wire [`WORD_SIZE-1:0] PC_add_1;
 	wire [`WORD_SIZE-1:0] nextPC;
-	wire predictTaken;
-	wire [`WORD_SIZE-1:0] predictResult;
-	wire [`WORD_SIZE-1:0] selectedPC;
+	wire [1:0] rs; wire[1:0] rt; wire[1:0] rd;
+	wire [1:0] rfAddr_1; // 1st register address to read 
+    wire [1:0] rfAddr_2; // 2nd register address to read
+    wire [`WORD_SIZE-1:0] rfData_1; // data stored in RF[regAddr_1]
+    wire [`WORD_SIZE-1:0] rfData_2; // data stored in RF[regAddr_2]
+	wire [`WORD_SIZE-1:0] brTarget; // actual branch target address
+	wire [`WORD_SIZE-1:0] jumpAddr; // actual jump target address
 	
-	// ID -> EX 
-	// latching registers
+	// EX stage variables
 	reg [`WORD_SIZE-1:0] PC_EX_reg; // PC+1 latching for JAL, JRL
 	reg [`WORD_SIZE-1:0] RF_A_reg; // RF[$rs] 
 	reg [`WORD_SIZE-1:0] RF_B_reg; // RF[$rt]
@@ -97,67 +105,55 @@ module datapath (
 	reg [`WORD_SIZE-1:0] ORI_immediate_reg; // concatenated with inst like {8'h00, inst[7:0]}
 	reg [1:0] rs_reg; reg [1:0] rt_reg; reg [1:0] rd_reg; // rs, rt, rd address
 	reg [`WORD_SIZE-1:0] output_port_EX_reg; // latching output_port in ID/EX
+	reg [3:0] opcode_EX_reg;
+	reg [5:0] func_code_EX_reg;
 	wire [`WORD_SIZE-1:0] originalPC;
 	wire [`WORD_SIZE-1:0] predictedPC;
 	wire [`WORD_SIZE-1:0] sign_immediate;
 	wire [`WORD_SIZE-1:0] LHI_immediate;
 	wire [`WORD_SIZE-1:0] ORI_immediate;
-	wire [1:0] rs; wire[1:0] rt; wire[1:0] rd;
-	wire [1:0] rfAddr_1; // 1st register address to read 
-    wire [1:0] rfAddr_2; // 2nd register address to read
-    wire [`WORD_SIZE-1:0] rfData_1; // data stored in RF[regAddr_1]
-    wire [`WORD_SIZE-1:0] rfData_2; // data stored in RF[regAddr_2]
-	
-	wire [`WORD_SIZE-1:0] brTarget; // actual branch target address
-	wire [`WORD_SIZE-1:0] jumpAddr; // actual jump target address
+	wire [1:0] destEX;
+	wire [`WORD_SIZE-1:0] output_port_EX;
+	wire [3:0] opcode_EX;
+	wire [5:0] func_code_EX;
 
-	// EX -> MEM
+	// MEM stage variables
 	reg [`WORD_SIZE-1:0] PC_M_reg; // PC + 1 latching for JAL, JRL
 	reg [`WORD_SIZE-1:0] ALUOut_reg; // latching result of ALU_main
 	reg [`WORD_SIZE-1:0] swData_reg; // data to store in memory
 	reg [1:0] destM_reg; // WB destination address
-	reg [3:0] opcode_EX_reg;
-	reg [5:0] func_code_EX_reg;
+	reg [`WORD_SIZE-1:0] output_port_M_reg; // latching output_port in EX->MEM
+	reg [3:0] opcode_M_reg;
+	reg [5:0] func_code_M_reg;
 	wire [`WORD_SIZE-1:0] ALUSrcA_main;
 	wire [`WORD_SIZE-1:0] ALUSrcB_main;
 	wire [`WORD_SIZE-1:0] ALUResult_main;
-	wire [1:0] destEX;
-	wire [`WORD_SIZE-1:0] output_port_EX;
-	wire [5:0] func_code_EX;
+	wire [`WORD_SIZE-1:0] output_port_M;
+	wire [5:0] func_code_M;
+	wire [1:0] destM;
 
-	// MEM -> WB
+	// WB stage variables
 	reg [`WORD_SIZE-1:0] PC_WB_reg; // PC + 1 latching for JAL, JRL
 	reg [`WORD_SIZE-1:0] lwData_reg; // data from d-mem in SWD instruction
 	reg [`WORD_SIZE-1:0] wbData_reg; // data to write back to the RF
 	reg [1:0] destWB_reg; // WB destination address
-	reg [`WORD_SIZE-1:0] output_port_M_reg; // latching output_port in EX->MEM
-	reg [3:0] opcode_M_reg;
-	reg [5:0] func_code_M_reg;
-	wire [`WORD_SIZE-1:0] output_port_M;
-	wire [1:0] destM;
-	wire [5:0] func_code_M;
-	wire [3:0] opcode_M;
-	
-	
-	// WB -> IF
 	reg [`WORD_SIZE-1:0] output_port_WB_reg; //latching output_port in MEM -> WB
 	reg [3:0] opcode_WB_reg;
 	reg [5:0] func_code_WB_reg;
 	wire [`WORD_SIZE-1:0] rfData_w;  // data to store into RF[regAddr_w]
 	wire [1:0] destWB;
 	wire [`WORD_SIZE-1:0] output_port_WB;
-	wire [3:0] opcode_WB;
 	wire [5:0] func_code_WB;
 
-	// Assignment multiple wires
-	// assign forwardTarget
+	// assignment of forwarding target
 	assign forwardTarget_EX = (opcode_EX == `OPCODE_JAL || (opcode_EX == `OPCODE_RTYPE && func_code_EX == `FUNC_JRL))? PC_EX_reg : ALUResult_main;
 	assign forwardTarget_M = (opcode_M == `OPCODE_LWD == 1'b1)? d_data :
 							 (opcode_M == `OPCODE_JAL || (opcode_M == `OPCODE_RTYPE && func_code_M == `FUNC_JRL))? PC_M_reg : ALUOut_reg;
 	assign forwardTarget_WB = (WBSrc == 2'd0)? lwData_reg :
 							  (WBSrc == 2'd1)? wbData_reg :
 							  (WBSrc == 2'd2)? PC_WB_reg : `WORD_SIZE'bz;
-	// assign RF_A_target, RF_B_target according to forwardSrcA, forwardSrcB
+
+	// assign RF target according to forwardSrcA, forwardSrcB
 	assign RF_A_target = (forwardSrcA == 2'd0)? rfData_1 :
 						 (forwardSrcA == 2'd1)? forwardTarget_EX :
 						 (forwardSrcA == 2'd2)? forwardTarget_M :
@@ -167,8 +163,7 @@ module datapath (
 						 (forwardSrcB == 2'd2)? forwardTarget_M :
 						 (forwardSrcB == 2'd3)? forwardTarget_WB : `WORD_SIZE'd0;
 
-
-	// IF -> ID assignment
+	// 1. Data flow in IF stage
 	assign PC = PC_reg;
 	assign nextPC = nextPC_reg;
 	assign i_address = PC_reg;
@@ -176,12 +171,7 @@ module datapath (
 
 	// ALU for PC + 1 
 	// It add 1 to PC, caculate next instruction address
-	ALU ALU_addPC(
-		.A(PC),
-		.B(`WORD_SIZE'd1),
-		.OP(`ALU_UNSIGNED_ADD),
-		.C(PC_add_1)
-	);
+	ALU ALU_addPC(.A(PC), .B(`WORD_SIZE'd1), .OP(`ALU_UNSIGNED_ADD), .C(PC_add_1));
 
 	// control predictor unit - always taken version (BTB + tag table)
 	// If branch/jump instruction was executed before, control_predictor predict the branch/jump address(predictResult) from its BTB.
@@ -201,68 +191,32 @@ module datapath (
 	  .predictTaken(predictTaken)
 	);
 	
-	// ID -> EX assignment
-	assign opcode = inst_reg[15:12]; 
-	assign func_code = inst_reg[5:0]; 
-	assign originalPC = originalPC_reg;
-	assign predictedPC = predictedPC_reg;
-	assign sign_immediate = {{8{inst_reg[7]}}, inst_reg[7:0]};
-	assign LHI_immediate = {inst_reg[7:0], 8'd0};
-	assign ORI_immediate = {8'd0, inst_reg[7:0]};
+	// 2. Data flow in ID stage
+	assign {opcode, func_code} = {inst_reg[15:12], inst_reg[5:0]}; 
+	assign {originalPC, predictedPC} = {originalPC_reg, predictedPC_reg};
+	assign {sign_immediate, LHI_immediate, ORI_immediate} = {{{8{inst_reg[7]}}, inst_reg[7:0]}, {inst_reg[7:0], 8'd0}, {8'd0, inst_reg[7:0]}};
 	assign {rs, rt, rd} = {inst_reg[11:10], inst_reg[9:8], inst_reg[7:6]};
 	assign {rfAddr_1, rfAddr_2} = {inst_reg[11:10], inst_reg[9:8]};
 	assign pcTarget = (btbSrc == 2'd0)? brTarget : 
 					  (btbSrc == 2'd1)? jrTarget : 
 					  (btbSrc == 2'd2)? jumpAddr :
 					  (btbSrc == 2'd3)? nextPC : pcTarget;
-	assign jumpAddr = {PC[15:12], inst_reg[11:0]};
-	assign jrTarget = RF_A_target;
-	assign opcode_EX = opcode_EX_reg;
-	assign func_code_EX = func_code_EX_reg;
+	assign {jumpAddr, jrTarget} = {{PC[15:12], inst_reg[11:0]}, RF_A_target};
 
 	// ALU for branch target address(brTarget)
 	// It calculates branch target address by nextPC + sign_immediate
-	ALU ALU_brTarget(
-		.A(nextPC),
-		.B(sign_immediate),
-		.OP(`ALU_UNSIGNED_ADD),
-		.C(brTarget)
-	);
+	ALU ALU_brTarget(.A(nextPC), .B(sign_immediate), .OP(`ALU_UNSIGNED_ADD), .C(brTarget));
 
 	// RF
 	// This module manages 4 registers
 	// using asynchronous read, synchronous write
-	RF rf (
-		.write(RegWrite),
-        .clk(clk),
-        .reset_n(reset_n),
-        .addr1(rfAddr_1),
-        .addr2(rfAddr_2),
-        .addr_w(destWB),
-        .data1(rfData_1),
-        .data2(rfData_2),
-        .data_w(rfData_w)
-	);
+	RF rf (.write(RegWrite), .clk(clk), .reset_n(reset_n), .addr1(rfAddr_1), .addr2(rfAddr_2), .addr_w(destWB), .data1(rfData_1), .data2(rfData_2), .data_w(rfData_w));
 
 	// comparator for RF[$rs], RF[$rt] to determine branch condition
 	// It compare rfData_1, and rfData_2 according to opcode(BNE, BEQ, BGZ, BLZ)
-	comparator comp(
-		.A(RF_A_target),
-		.B(RF_B_target),
-		.opcode(opcode),
-		.bcond(bcond)
-	);
-
-	// main ALU
-	// It executes the calculation according to ALUOp.
-	ALU ALU_main(
-		.A(ALUSrcA_main),
-		.B(ALUSrcB_main),
-		.OP(ALUOp),
-		.C(ALUResult_main)
-	);
+	comparator comp(.A(RF_A_target), .B(RF_B_target), .opcode(opcode), .bcond(bcond));
 	
-	// EX -> MEM assignment
+	// 3. Data flow in EX stage
 	assign ALUSrcA_main = RF_A_reg;
 	assign ALUSrcB_main = (ALUSrcB==2'd0)? RF_B_reg :
 						  (ALUSrcB==2'd1)? sign_immediate_reg :
@@ -271,66 +225,45 @@ module datapath (
 	assign destEX = (RegDst==2'd0)? rt_reg :
 					(RegDst==2'd1)? rd_reg :
 					(RegDst==2'd2)? 2'd2 : 2'dz;
-	assign output_port_EX = output_port_EX_reg;
-	assign opcode_M = opcode_M_reg;
-	assign func_code_M = func_code_M_reg;
+	assign {output_port_EX, opcode_EX, func_code_EX} = {output_port_EX_reg, opcode_EX_reg, func_code_EX_reg};
+
+	// main ALU
+	// It executes the calculation according to ALUOp.
+	ALU ALU_main(.A(ALUSrcA_main), .B(ALUSrcB_main), .OP(ALUOp), .C(ALUResult_main));
 	
-	// MEM -> WB assignment
+	// 4. Data flow in MEM stage
 	assign d_address = ALUOut_reg;
 	assign d_data = (d_writeM)? swData_reg : `WORD_SIZE'bz;
-	assign destM = destM_reg;
-	assign output_port_M = output_port_M_reg;
-	assign opcode_WB = opcode_WB_reg;
-	assign func_code_WB = func_code_WB_reg;
+	assign {destM, output_port_M, opcode_M, func_code_M} = {destM_reg, output_port_M_reg, opcode_M_reg, func_code_M_reg};
 	
-	// WB -> IF assignment
+	// 5. Data flow in WB stage
 	assign rfData_w = (WBSrc == 2'd0)? lwData_reg :
 					  (WBSrc == 2'd1)? wbData_reg :
 					  (WBSrc == 2'd2)? PC_WB_reg : `WORD_SIZE'bz;
-	assign destWB = destWB_reg;
-	assign output_port_WB = output_port_WB_reg;
+	assign {destWB, output_port_WB, opcode_WB, func_code_WB} = {destWB_reg, output_port_WB_reg, opcode_WB_reg, func_code_WB_reg};
 		
 	always @(posedge clk, negedge reset_n) begin
 		if (reset_n==1'b0) begin
 			// reset IF stage registers
-			PC_reg <= `WORD_SIZE'd0;
-			inst_reg <= `WORD_SIZE'he000;
-			nextPC_reg <= `WORD_SIZE'd0;
-			predictedPC_reg <= `WORD_SIZE'd0;
-			originalPC_reg <= `WORD_SIZE'd0;
+			{PC_reg, inst_reg, nextPC_reg, predictedPC_reg, originalPC_reg}
+				<= {`WORD_SIZE'd0, `WORD_SIZE'he000, `WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0};
 			IFState <= 1'd0;
 			
 			// reset ID stage registers
-			PC_EX_reg <= `WORD_SIZE'd0;
-			RF_A_reg <= `WORD_SIZE'd0;
-			RF_B_reg <= `WORD_SIZE'd0;
-			sign_immediate_reg <= `WORD_SIZE'd0;
-			LHI_immediate_reg <= `WORD_SIZE'd0;
-			ORI_immediate_reg <= `WORD_SIZE'd0;
+			{PC_EX_reg, RF_A_reg, RF_B_reg, sign_immediate_reg, LHI_immediate_reg, ORI_immediate_reg, output_port_EX_reg}
+				<= {`WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0};
 			{rs_reg, rt_reg, rd_reg} <= 6'd0;
-			output_port_EX_reg <= `WORD_SIZE'd0;
-			opcode_EX_reg <= `OPCODE_FLUSH;
-			func_code_EX_reg <= 6'd0;
+			{opcode_EX_reg, func_code_EX_reg} <= {`OPCODE_FLUSH, 6'd0};
 
 			// reset EX stage registers
-			PC_M_reg <= `WORD_SIZE'd0;
-			ALUOut_reg <= `WORD_SIZE'd0;
-			swData_reg <= `WORD_SIZE'd0;
-			destM_reg <= 2'd0;
-			output_port_M_reg <= `WORD_SIZE'd0;
-			opcode_M_reg <= `OPCODE_FLUSH;
-			func_code_M_reg <= 6'd0;
+			{PC_M_reg, ALUOut_reg, swData_reg, destM_reg, output_port_M_reg, opcode_M_reg, func_code_M_reg}
+				<= {`WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0, 2'd0, `WORD_SIZE'd0, `OPCODE_FLUSH, 6'd0};
 
 			// reset MEM stage registers
-			PC_WB_reg <= `WORD_SIZE'd0;
-			lwData_reg <= `WORD_SIZE'd0;
-			wbData_reg <= `WORD_SIZE'd0;
-			destWB_reg <= 2'd0;
-			output_port_WB_reg <= `WORD_SIZE'd0;
-			opcode_WB_reg <= `OPCODE_FLUSH;
-			func_code_WB_reg <= 6'd0;
+			{PC_WB_reg, lwData_reg, wbData_reg, destWB_reg, output_port_WB_reg, opcode_WB_reg, func_code_WB_reg}
+				<= {`WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0, 2'd0, `WORD_SIZE'd0, `OPCODE_FLUSH, 6'd0};
 			MState <= 1'd1;
-			
+
 			// reset output_port
 			output_port <= `WORD_SIZE'd0;
 		end
@@ -340,10 +273,8 @@ module datapath (
 			if (PCWrite) PC_reg <= (flush)? pcTarget : selectedPC; // update PC only when previous state == 1
 			
 			// IF -> ID
-			nextPC_reg <= (IFWrite)? PC_add_1 : nextPC_reg;
-			predictedPC_reg <= (IFWrite)? selectedPC : predictedPC_reg;
-			originalPC_reg <= (IFWrite)? PC : originalPC_reg;
-			if (IFState) begin
+			if (IFWrite) begin
+				{nextPC_reg, predictedPC_reg, originalPC_reg} <= {PC_add_1, selectedPC, PC};
 				inst_reg <= (!flush)? i_data : `WORD_SIZE'he000;
 			end
 			else begin
@@ -353,43 +284,26 @@ module datapath (
 			// ID -> EX : update only when IDWrite == 1(not stall)
 			if (IDWrite) begin
 				// forwarding data to RF_A_reg, RF_B_reg according to forwardSrcA, forwardSrcB from hazard_control
-				RF_A_reg <= RF_A_target;
-				RF_B_reg <= RF_B_target;
-				output_port_EX_reg <= RF_A_target;
+				{RF_A_reg, RF_B_reg, output_port_EX_reg} <= {RF_A_target, RF_B_target, RF_A_target};
+				{PC_EX_reg, sign_immediate_reg, LHI_immediate_reg, ORI_immediate_reg} <= {nextPC, sign_immediate, LHI_immediate, ORI_immediate};
+				{rs_reg, rt_reg, rd_reg, opcode_EX_reg, func_code_EX_reg} <= {rs, rt, rd, opcode, func_code};
 			end
 			else begin
-				RF_A_reg <= RF_A_reg;
-				RF_B_reg <= RF_B_reg;
-				output_port_EX_reg <= output_port;
+				{RF_A_reg, RF_B_reg, output_port_EX_reg} <= {RF_A_reg, RF_B_reg, output_port};
 			end
-			PC_EX_reg <= (IDWrite)? nextPC : PC_EX_reg;
-			sign_immediate_reg <= (IDWrite)? sign_immediate : sign_immediate_reg;
-			LHI_immediate_reg <= (IDWrite)? LHI_immediate : LHI_immediate_reg;
-			ORI_immediate_reg <= (IDWrite)? ORI_immediate : ORI_immediate_reg;
-			rs_reg <= (IDWrite)? rs : rs_reg;
-			rt_reg <= (IDWrite)? rt : rt_reg;
-			rd_reg <= (IDWrite)? rd : rd_reg;
-			opcode_EX_reg <= (IDWrite)? opcode : opcode_EX_reg;
-			func_code_EX_reg <= (IDWrite)? func_code : func_code_EX_reg;
 
 			// EX -> MEM : update only when EXWrite == 1(not stall)	
 			MState <= ((opcode_EX == `OPCODE_LWD || opcode_EX == `OPCODE_SWD) && MState == 1'b1)? 1'b0 : 1'b1; // update MState
-			PC_M_reg <= (EXWrite)? PC_EX_reg : PC_M_reg;
-			ALUOut_reg <= (EXWrite)? ALUResult_main : ALUOut_reg;
-			swData_reg <= (EXWrite)? RF_B_reg : swData_reg;
-			destM_reg <= (EXWrite)? destEX : destM_reg;
-			output_port_M_reg <= (EXWrite)? output_port_EX : output_port;
-			opcode_M_reg <= (EXWrite)? opcode_EX_reg : opcode_M_reg;
-			func_code_M_reg <= (EXWrite)? func_code_EX_reg : func_code_M_reg;
+			if (EXWrite) begin
+				{PC_M_reg, ALUOut_reg, swData_reg, destM_reg, output_port_M_reg, opcode_M_reg, func_code_M_reg}
+					<= {PC_EX_reg, ALUResult_main, RF_B_reg, destEX, output_port_EX_reg, opcode_EX_reg, func_code_EX_reg};
+			end
 
 			// MEM -> WB : update only when MWrite == 1(not stall)
-			PC_WB_reg <= (MWrite)? PC_M_reg : PC_WB_reg;
-			lwData_reg <= (MWrite)? d_data : lwData_reg;
-			wbData_reg <= (MWrite)? ALUOut_reg : wbData_reg;
-			destWB_reg <= (MWrite)? destM : destWB_reg;
-			output_port_WB_reg <= (MWrite)? output_port_M : output_port;
-			opcode_WB_reg <= (MWrite)? opcode_M_reg : opcode_WB_reg;
-			func_code_M_reg <= (MWrite)? func_code_M_reg : func_code_WB_reg;
+			if (MWrite) begin
+				{PC_WB_reg, lwData_reg, wbData_reg, destWB_reg, output_port_WB_reg, opcode_WB_reg, func_code_WB_reg}
+					<= {PC_M_reg, d_data, ALUOut_reg, destM, output_port_M, opcode_M_reg, func_code_M_reg};
+			end
 
 			// update output_port only when isWWD_WB == 1 (isWWD_WB is the signal indicating WWD instruction in WB stage)
 			output_port <= (isWWD_WB)? output_port_WB_reg : output_port;
