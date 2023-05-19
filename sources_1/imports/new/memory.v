@@ -81,19 +81,25 @@ module Memory(
 		end
 		else begin
 			{i_stateM, d_stateM} <= {i_nextStateM, d_nextStateM}; // update current state(i_stateM, d_stateM)
-			if (d_stateM == STORE3) memory[d_addressM+3 : d_addressM] <= d_dataM;
+			if (d_stateM == STORE3) begin
+				{memory[d_addressM+3], memory[d_addressM+2], memory[d_addressM+1], memory[d_addressM]} <= d_dataM;
+			end
 		end
 	end
 
 	// asynchronous
 	always @(*) begin
 		// update i_outputData
-		if (i_stateM == FETCH3) i_outputData <= memory[i_addressM+3 : i_addressM];
+		if (i_stateM == FETCH3) begin
+			i_outputData <= {memory[i_addressM+3], memory[i_addressM+2], memory[i_addressM+1], memory[i_addressM]};
+		end 
 		else i_outputData <= `FETCH_SIZE'dz;
 
 		// update d_outputData
 		if (d_stateM == RESET) d_outputData <= `FETCH_SIZE'dz;
-		else if (d_stateM == FETCH3) d_outputData <= memory[d_addressM+3 : d_addressM];
+		else if (d_stateM == FETCH3) begin
+			d_outputData <= {memory[d_addressM+3], memory[d_addressM+2], memory[d_addressM+1], memory[d_addressM]};
+		end
 		else d_outputData <= `FETCH_SIZE'dz;
 	end
 	
