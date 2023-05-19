@@ -3,33 +3,24 @@
 `define MEMORY_SIZE 256	//	size of memory is 2^8 words (reduced size)
 `define WORD_SIZE 16	//	instead of 2^16 words to reduce memory
 			//	requirements in the Active-HDL simulator 
+`define FETCH_SIZE 64 // fetch size for cache (4 words = 64bits)
 
-module Memory(clk, reset_n, i_readM, i_writeM, i_address, i_data, d_readM, d_writeM, d_address, d_data);
-	input clk;
-	wire clk;
-	input reset_n;
-	wire reset_n;
+module Memory(
+	input clk,
+	input reset_n,
+
+	// I-memory interface
+	input i_readM,
+	input i_writeM,
+	input [`WORD_SIZE-1:0] i_address,
+	inout i_data,
 	
-	// Instruction memory interface
-	input i_readM;
-	wire i_readM;
-	input i_writeM;
-	wire i_writeM;
-	input [`WORD_SIZE-1:0] i_address;
-	wire [`WORD_SIZE-1:0] i_address;
-	inout i_data;
-	wire [`WORD_SIZE-1:0] i_data;
-	
-	// Data memory interface
-	input d_readM;
-	wire d_readM;
-	input d_writeM;
-	wire d_writeM;
-	input [`WORD_SIZE-1:0] d_address;
-	wire [`WORD_SIZE-1:0] d_address;
-	inout d_data;
-	wire [`WORD_SIZE-1:0] d_data;
-	
+	// D-memory interface
+	input d_readM,
+	input d_writeM,
+	input [`WORD_SIZE-1:0] d_address,
+	inout d_data
+);	
 	reg [`WORD_SIZE-1:0] memory [0:`MEMORY_SIZE-1];
 	reg [`WORD_SIZE-1:0] i_outputData;
 	reg [`WORD_SIZE-1:0] d_outputData;
@@ -65,10 +56,8 @@ module Memory(clk, reset_n, i_readM, i_writeM, i_address, i_data, d_readM, d_wri
 				i_memState <= 1'd0;
 			end
 			else begin
-				if (!i_memState) begin
-					i_outputData <= memory[i_address_reg]; // fetch instruction
-					i_memState <= 1'd1;
-				end
+				i_outputData <= memory[i_address_reg]; // fetch instruction
+				i_memState <= 1'd1;
 			end
 
 			// D-memory operation - LWD
