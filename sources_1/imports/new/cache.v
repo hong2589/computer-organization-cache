@@ -159,7 +159,7 @@ module cache(
 				{i_outputDataC, d_outputDataC, i_outputDataM, d_outputDataM} <= {`WORD_SIZE'dz, `WORD_SIZE'dz, `FETCH_SIZE'dz, `FETCH_SIZE'dz};
 			end
 			// reset state
-			i_state <= RESET; d_state <= RESET;
+			{i_state, d_state} <= {RESET, RESET};
 		end
 		else begin
 			{i_state, d_state} <= {i_nextState, d_nextState}; // update current state

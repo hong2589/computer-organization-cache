@@ -12,85 +12,92 @@ module Memory(
 	// I-memory interface
 	input i_readM,
 	input i_writeM,
-	input [`WORD_SIZE-1:0] i_address,
-	inout i_data,
+	input [`WORD_SIZE-1:0] i_addressM,
+	inout [`FETCH_SIZE-1:0] i_dataM,
 	
 	// D-memory interface
 	input d_readM,
 	input d_writeM,
-	input [`WORD_SIZE-1:0] d_address,
-	inout d_data
+	input [`WORD_SIZE-1:0] d_addressM,
+	inout [`FETCH_SIZE-1:0] d_dataM
 );	
-	reg [`WORD_SIZE-1:0] memory [0:`MEMORY_SIZE-1];
-	reg [`WORD_SIZE-1:0] i_outputData;
-	reg [`WORD_SIZE-1:0] d_outputData;
+	// parameter for memory state
+	parameter RESET = 4'h0;
+	parameter FETCH0 = 4'h1;
+	parameter FETCH1 = 4'h2;
+	parameter FETCH2 = 4'h3;
+	parameter FETCH3 = 4'h4;
+	parameter STORE0 = 4'h5;
+	parameter STORE1 = 4'h6;
+	parameter STORE2 = 4'h7;
+	parameter STORE3 = 4'h8;
 
-	// memory state to implement 2 cycle fetching.
-	reg i_memState; // I-memory state. 0: receive address and store it to i_address_reg, 1: transmit memory[i_address] to datapath
-	reg d_memState_LWD; // D-memory LWD state. 0: 
-	reg d_memState_SWD; // D-memory SWD state. 0: 
-	reg [`WORD_SIZE-1:0] i_address_reg; // register for memorizing i_address from datapath
-	reg [`WORD_SIZE-1:0] d_address_reg; // register for memorizing d_address from datapath
-	reg [`WORD_SIZE-1:0] d_data_reg; // register for memorizing d_data from datapath
+	// state register
+	reg [3:0] i_stateM;
+	reg [3:0] i_nextStateM;
+	reg [3:0] d_stateM;
+	reg [3:0] d_nextStateM;
+
+	reg [`WORD_SIZE-1:0] memory [0:`MEMORY_SIZE-1];
+	reg [`FETCH_SIZE-1:0] i_outputData;
+	reg [`FETCH_SIZE-1:0] d_outputData;
 	
 	// fetch instruction & data
-	assign i_data = (i_memState)? i_outputData:`WORD_SIZE'bz; // fetch instruction when i_memState = 1
-	assign d_data = (d_memState_LWD)? d_outputData:`WORD_SIZE'bz; // fetch data when d_memState_LWD = 1
+	assign i_dataM = i_outputData;
+	assign d_dataM = d_outputData;
 
+	// update i_nextStateM, d_nextStateM
+	always @(*) begin
+		case (i_stateM)
+			RESET : i_nextStateM <= (i_readM)? FETCH0 : RESET;
+			FETCH0 : i_nextStateM <= FETCH1;
+			FETCH1 : i_nextStateM <= FETCH2;
+			FETCH2 : i_nextStateM <= FETCH3;
+			FETCH3 : i_nextStateM <= RESET;
+		endcase
+		case (d_stateM)
+			RESET : begin
+				if (d_readM) d_nextStateM <= FETCH0;
+				else if (d_writeM) d_nextStateM <= STORE0;
+				else d_nextStateM <= RESET;
+			end
+			FETCH0 : d_nextStateM <= FETCH1;
+			FETCH1 : d_nextStateM <= FETCH2;
+			FETCH2 : d_nextStateM <= FETCH3;
+			FETCH3 : d_nextStateM <= RESET;
+			STORE0 : d_nextStateM <= STORE1;
+			STORE1 : d_nextStateM <= STORE2;
+			STORE2 : d_nextStateM <= STORE3;
+			STORE3 : d_nextStateM <= RESET;
+		endcase
+	end
+
+	// synchronous
 	always @(posedge clk, negedge reset_n) begin
 		if(!reset_n) begin
 			// reset state of i_mem, d_mem
-			i_memState <= 1'd1;
-			d_memState_LWD <= 1'd1;
-			d_memState_SWD <= 1'd1;
-
-			// reset i_data, d_data register
-			d_data_reg <= `WORD_SIZE'd0;
-			i_outputData <= `WORD_SIZE'bz;
-			d_outputData <= `WORD_SIZE'bz;
+			{i_stateM, d_stateM} <= {RESET, RESET};
+			{i_outputData, d_outputData} <= {`FETCH_SIZE'dz, `FETCH_SIZE'dz};
 		end
 		else begin
-			// I-memory operation
-			if (i_readM) begin
-				i_address_reg <= i_address; // memorize i_address
-				i_memState <= 1'd0;
-			end
-			else begin
-				i_outputData <= memory[i_address_reg]; // fetch instruction
-				i_memState <= 1'd1;
-			end
-
-			// D-memory operation - LWD
-			if (d_readM) begin
-				d_address_reg <= d_address; // memorize d_address
-				d_memState_LWD <= 1'd0;
-				d_outputData <= `WORD_SIZE'bz;
-			end
-			else begin
-				if (!d_memState_LWD) begin
-					d_memState_LWD <= 1'd1;
-					d_outputData <= memory[d_address_reg]; // fetch data
-				end
-				else begin
-					d_outputData <= `WORD_SIZE'bz;
-				end
-			end
-
-			// d_mem operation - SWD
-			if (d_writeM) begin
-				d_address_reg <= d_address; // memorize d_address
-				d_data_reg <= d_data; // memorize d_data
-				d_memState_SWD <= 1'd0;
-			end
-			else begin
-				if (!d_memState_SWD) begin
-					d_memState_SWD <= 1'd1;
-					memory[d_address_reg] <= d_data_reg; // store data
-				end
-			end
+			{i_stateM, d_stateM} <= {i_nextStateM, d_nextStateM}; // update current state(i_stateM, d_stateM)
+			if (d_stateM == STORE3) memory[d_addressM+3 : d_addressM] <= d_dataM;
 		end
 	end
+
+	// asynchronous
+	always @(*) begin
+		// update i_outputData
+		if (i_stateM == FETCH3) i_outputData <= memory[i_addressM+3 : i_addressM];
+		else i_outputData <= `FETCH_SIZE'dz;
+
+		// update d_outputData
+		if (d_stateM == RESET) d_outputData <= `FETCH_SIZE'dz;
+		else if (d_stateM == FETCH3) d_outputData <= memory[d_addressM+3 : d_addressM];
+		else d_outputData <= `FETCH_SIZE'dz;
+	end
 	
+	// reset memory
 	always@(posedge clk, negedge reset_n) begin
 		if(!reset_n) begin
 			memory[16'h0] <= 16'h9023; 
