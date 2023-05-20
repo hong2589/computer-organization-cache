@@ -18,8 +18,8 @@ module control_unit (
 
 	// control signals transferred to datapath
 	// IF
-	output i_writeM, // write enable signal to i-mem
-	output i_readM, // read enable signal to i-mem
+	output i_writeC, // write enable signal to i-mem
+	output i_readC, // read enable signal to i-mem
     
 	// ID
 	output isWWD_EX,
@@ -32,8 +32,8 @@ module control_unit (
 	output [1:0] ALUSrcB, // select 2nd source of ALU. 0: RF_B, 1: sign_immediate, 2: LHI_immediate
 
 	// MEM
-	output d_writeM, // write signal to data mermory interface
-	output d_readM, // read signal to data memory interface
+	output d_writeC, // write signal to data mermory interface
+	output d_readC, // read signal to data memory interface
 
 	// WB
 	output RegWrite, // write signal to RF
@@ -50,10 +50,10 @@ module control_unit (
 	reg is_halted;
 
 	// signal from control_unit to memory
-	reg i_readM; 
-	reg i_writeM;
-	reg d_readM;
-	reg d_writeM;
+	reg i_readC; 
+	reg i_writeC;
+	reg d_readC;
+	reg d_writeC;
 
 	// register for remembering previous opcode_WB
 	reg [3:0] previous_opcode_WB_reg;
@@ -100,18 +100,18 @@ module control_unit (
 		end
 	end
 
-	// update i_readM, i_writeM, d_readM, d_writeM
+	// update i_readC, i_writeC, d_readC, d_writeC
 	always @(*) begin
 		if (!reset_n) begin
-			i_writeM <= 1'd0;
-			i_readM <= 1'd1;
-			d_readM <= 1'd0;
-			d_writeM <= 1'd0;
+			i_writeC <= 1'd0;
+			i_readC <= 1'd1;
+			d_readC <= 1'd0;
+			d_writeC <= 1'd0;
 		end
 		else begin
-			i_readM <= ~IFState;
-			if (opcode_M == `OPCODE_LWD) d_readM <= ~MState;
-			if (opcode_M == `OPCODE_SWD) d_writeM <= ~MState;
+			i_readC <= ~IFState;
+			if (opcode_M == `OPCODE_LWD) d_readC <= ~MState;
+			if (opcode_M == `OPCODE_SWD) d_writeC <= ~MState;
 		end
 	end
 

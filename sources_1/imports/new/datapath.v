@@ -269,16 +269,16 @@ module datapath (
 		end
 		else begin
 			// PC
-			IFState <= (IFState || flush || (opcode_EX == `OPCODE_LWD || opcode_EX == `OPCODE_SWD) || !MState)? 1'b0 : 1'b1; // update IFState
+			IFState <= (IFState || !MState)? 1'b0 : 1'b1; // update IFState
 			if (PCWrite) PC_reg <= (flush)? pcTarget : selectedPC; // update PC only when previous state == 1
 			
 			// IF -> ID
 			if (IFWrite) begin
 				{nextPC_reg, predictedPC_reg, originalPC_reg} <= {PC_add_1, selectedPC, PC};
-				inst_reg <= (!flush)? i_data : `WORD_SIZE'he000;
+				inst_reg <= (flush)? `WORD_SIZE'he000 : i_data;
 			end
 			else begin
-				inst_reg <= (MState)? `WORD_SIZE'he000 : inst_reg;
+				inst_reg <= (!MWrite)? inst_reg : `WORD_SIZE'he000;
 			end
 
 			// ID -> EX : update only when IDWrite == 1(not stall)

@@ -23,6 +23,10 @@ module hazard_control (
 	input RegWrite_WB, // Register write signal in WB
 	input is_halted, // signal indicating HLT instruction committed
 
+	// cache hit signal from cache
+	input i_cache_hit,
+	input d_cache_hit,
+
 	// WB destination from datapath
 	input [1:0] destEX, // WB register address in EX
 	input [1:0] destM, // WB register address in MEM
@@ -63,235 +67,259 @@ module hazard_control (
 	reg [1:0] forwardSrcA; reg [1:0] forwardSrcB;
 	reg isPredict;
 
-	// Control data, control hazard
+	// state parameters, registers
+	parameter RESET = 2'd0;
+	parameter ACCESS_I = 2'd1;
+	parameter ACCESS_D = 2'd2;
+	parameter HAZARD_STALL = 2'd3;
+	reg [1:0] control_state;
+	reg [1:0] next_control_state;
+
+	// update next_control_state
 	always @(*) begin
-		if (reset_n == 1'd0) begin
+		case(control_state)
+			RESET : 
+			ACCESS_I : next_control_state <= (i_ready)? RESET : ACCESS_I;
+			ACCESS_D : next_control_state <= (d_ready)? RESET : ACCESS_D;
+			HAZARD_STALL : 
+		endcase
+	end
+
+	always @(posedge clk, negedge reset_n) begin
+		if (!reset_n) begin
 			{PCWrite , IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // turn on all the write signals
 			{btbSrc, btbWrite, flush} <= 4'b0000; // disable BTB write, reset flush to 0
 			{isStall, forwardSrcA, forwardSrcB, isPredict} <= {1'd0, 2'd0, 2'd0, 1'd0};
+			{control_state, next_control_state} <= {RESET, RESET};
 		end
 		else begin
-			// flushed instruction
-			if (opcode == `OPCODE_FLUSH) begin
-				casex ({MState, IFState})
-					2'b0x : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
-					2'b10 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111; // stall PC
-					2'b11 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
-				endcase
-				{isStall, btbWrite, btbSrc, flush, isPredict} <= {1'd0, 1'd0, 2'd0, 1'd0, 1'd0};
-			end
+			control_state <= next_control_state;
+		end
+	end
 
-			// use both $rs, $rt - ADD, SUB, AND, ORR, SWD
-			else if ((opcode == `OPCODE_RTYPE && (func_code == `FUNC_ADD || func_code == `FUNC_SUB || func_code == `FUNC_AND || func_code == `FUNC_ORR)) || opcode == `OPCODE_SWD) begin
-				// $rs dependence check
-				if (rs == destM && RegWrite_M) forwardSrcA <= 2'd2; // $rs dependent with instruction in MEM stage
-				else if (rs == destWB && RegWrite_WB) forwardSrcA <= 2'd3; // $rs dependent with instruction in WB stage
-				else forwardSrcA <= 2'd0; // $rs not dependent with any instruction
 
-				// $rt dependence check
-				if (rt == destM && RegWrite_M) forwardSrcB <= 2'd2; // $rt dependent with instruction in MEM stage
-				else if (rt == destWB && RegWrite_WB) forwardSrcB <= 2'd3; // $rt dependent with instruction in WB stage
-				else forwardSrcB <= 2'd0; // $rt not dependent with any instruction
-				
-				// update stage write signals according to MState, IFState
-				casex ({MState, IFState})
-					2'b0x : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
-					2'b10 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111; // stall PC
-					2'b11 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
-				endcase
-				{isStall, btbWrite, btbSrc, flush, isPredict} <= {1'd0, 1'd0, 2'd0, 1'd0, 1'd0};
-			end
+	// Control data, control hazard
+	always @(*) begin
+		// flushed instruction
+		if (opcode == `OPCODE_FLUSH) begin
+			casex ({MState, IFState})
+				2'b0x : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
+				2'b10 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111; // stall PC
+				2'b11 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+			endcase
+			{isStall, btbWrite, btbSrc, flush, isPredict} <= {1'd0, 1'd0, 2'd0, 1'd0, 1'd0};
+		end
 
-			// use both $rs, $rt - BNE, BEQ
-			else if (opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ) begin
-				// $rs dependence check
-				if (rs == destM && RegWrite_M) forwardSrcA <= 2'd2; // $rs dependent with instruction in MEM stage
-				else if (rs == destWB && RegWrite_WB) forwardSrcA <= 2'd3; // $rs dependent with instruction in WB stage
-				else forwardSrcA <= 2'd0; // $rs not dependent with any instruction
+		// use both $rs, $rt - ADD, SUB, AND, ORR, SWD
+		else if ((opcode == `OPCODE_RTYPE && (func_code == `FUNC_ADD || func_code == `FUNC_SUB || func_code == `FUNC_AND || func_code == `FUNC_ORR)) || opcode == `OPCODE_SWD) begin
+			// $rs dependence check
+			if (rs == destM && RegWrite_M) forwardSrcA <= 2'd2; // $rs dependent with instruction in MEM stage
+			else if (rs == destWB && RegWrite_WB) forwardSrcA <= 2'd3; // $rs dependent with instruction in WB stage
+			else forwardSrcA <= 2'd0; // $rs not dependent with any instruction
 
-				// $rt dependence check
-				if (rt == destM && RegWrite_M) forwardSrcB <= 2'd2; // $rs dependent with instruction in MEM stage
-				else if (rt == destWB && RegWrite_WB) forwardSrcB <= 2'd3; // $rs dependent with instruction in WB stage
-				else forwardSrcB <= 2'd0; // $rs not dependent with any instruction
+			// $rt dependence check
+			if (rt == destM && RegWrite_M) forwardSrcB <= 2'd2; // $rt dependent with instruction in MEM stage
+			else if (rt == destWB && RegWrite_WB) forwardSrcB <= 2'd3; // $rt dependent with instruction in WB stage
+			else forwardSrcB <= 2'd0; // $rt not dependent with any instruction
+			
+			// update stage write signals according to MState, IFState
+			casex ({MState, IFState})
+				2'b0x : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
+				2'b10 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111; // stall PC
+				2'b11 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+			endcase
+			{isStall, btbWrite, btbSrc, flush, isPredict} <= {1'd0, 1'd0, 2'd0, 1'd0, 1'd0};
+		end
 
-				// update stage write signals according to MState, IFState
-				casex ({MState, IFState})
-					2'b0x : begin
-						{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
-						{btbWrite, btbSrc, flush} <= {1'd0, 2'd0, 1'd0};
-					end
-					2'b10 : begin
-						// branch taken -> Write brTarget to BTB
-						if (bcond) begin
-							{btbWrite, btbSrc} <= {1'd1, 2'd0};
-							if (predictedPC != brTarget) begin
-								flush <= 1'b1; // mispredict branch target -> flush
-								{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111;
-							end
-							else begin
-								flush <= 1'b0; // mispredict branch target -> flush
-								{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111;
-							end
+		// use both $rs, $rt - BNE, BEQ
+		else if (opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ) begin
+			// $rs dependence check
+			if (rs == destM && RegWrite_M) forwardSrcA <= 2'd2; // $rs dependent with instruction in MEM stage
+			else if (rs == destWB && RegWrite_WB) forwardSrcA <= 2'd3; // $rs dependent with instruction in WB stage
+			else forwardSrcA <= 2'd0; // $rs not dependent with any instruction
+
+			// $rt dependence check
+			if (rt == destM && RegWrite_M) forwardSrcB <= 2'd2; // $rs dependent with instruction in MEM stage
+			else if (rt == destWB && RegWrite_WB) forwardSrcB <= 2'd3; // $rs dependent with instruction in WB stage
+			else forwardSrcB <= 2'd0; // $rs not dependent with any instruction
+
+			// update stage write signals according to MState, IFState
+			casex ({MState, IFState})
+				2'b0x : begin
+					{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
+					{btbWrite, btbSrc, flush} <= {1'd0, 2'd0, 1'd0};
+				end
+				2'b10 : begin
+					// branch taken -> Write brTarget to BTB
+					if (bcond) begin
+						{btbWrite, btbSrc} <= {1'd1, 2'd0};
+						if (predictedPC != brTarget) begin
+							flush <= 1'b1; // mispredict branch target -> flush
+							{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= (!IFState)? 5'b00000 : 5'b11111;
 						end
 						else begin
-							{btbWrite, btbSrc} <= {1'd0, 2'd3};
-							if (predictedPC != nextPC) begin
-								flush <= 1'b1;
-								{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111;
-							end
-							else begin
-								flush <= 1'b0;
-								{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111;
-							end
-							flush <= (predictedPC != nextPC)? 1'd1 : 1'd0; // mispredict branch target -> flush 
-						end
-					end
-					2'b11 : begin
-						{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
-					end
-				endcase
-				{isStall, isPredict} <= {1'd0, 1'd1};
-			end
-
-			// use only $rs - NOT, TCP, SHL, SHR, WWD, ADI, ORI, LWD
-			else if ((opcode == `OPCODE_RTYPE && (func_code == `FUNC_NOT || func_code == `FUNC_TCP || func_code == `FUNC_SHL || func_code == `FUNC_SHR ||
-					func_code == `FUNC_WWD)) || opcode == `OPCODE_ADI || opcode == `OPCODE_ORI || opcode == `OPCODE_LWD) begin
-				// $rs dependence check
-				if (rs == destM && RegWrite_M) forwardSrcA <= 2'd2; // $rs dependent with instruction in MEM stage
-				else if (rs == destWB && RegWrite_WB) forwardSrcA <= 2'd3; // $rs dependent with instruction in WB stage
-				else forwardSrcA <= 2'd0; // $rs not dependent with any instruction
-
-				// update stage write signals according to MState, IFState
-				casex ({MState, IFState})
-					2'b0x : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
-					2'b10 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111; // stall PC
-					2'b11 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
-				endcase
-				{isStall, btbWrite, btbSrc, flush, isPredict} <= {1'd0, 1'd0, 2'd0, 1'd0, 1'd0};
-			end
-
-			// use only $rs - BGZ, GLZ
-			else if (opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ) begin
-				// $rs dependence check
-				if (rs == destM && RegWrite_M) forwardSrcA <= 2'd2; // $rs dependent with instruction in MEM stage
-				else if (rs == destWB && RegWrite_WB) forwardSrcA <= 2'd3; // $rs dependent with instruction in WB stage
-				else forwardSrcA <= 2'd0; // $rs not dependent with any instruction
-				
-				// update stage write signals according to MState, IFState
-				casex ({MState, IFState})
-					2'b0x : begin
-						{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
-						{btbWrite, btbSrc, flush} <= {1'd0, 2'd0, 1'd0};
-					end
-					2'b10 : begin
-						// branch taken -> Write brTarget to BTB
-						if (bcond) begin
-							{btbWrite, btbSrc} <= {1'd1, 2'd0};
-							if (predictedPC != brTarget) begin
-								flush <= 1'b1; // mispredict branch target -> flush
-								{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111;
-							end
-							else begin
-								flush <= 1'b0; // mispredict branch target -> flush
-								{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111;
-							end
-						end
-						else begin
-							{btbWrite, btbSrc} <= {1'd0, 2'd3};
-							if (predictedPC != nextPC) begin
-								flush <= 1'b1;
-								{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111;
-							end
-							else begin
-								flush <= 1'b0;
-								{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111;
-							end
-							flush <= (predictedPC != nextPC)? 1'd1 : 1'd0; // mispredict branch target -> flush 
-						end
-					end
-					2'b11 : begin
-						{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
-					end
-				endcase
-				{isStall, isPredict} <= {1'd0, 1'd1};
-			end
-
-			// use only $rs - JPR, JRL
-			else if (opcode == `OPCODE_RTYPE && (func_code == `FUNC_JPR || func_code == `FUNC_JRL)) begin
-				// $rs dependence check
-				if (rs == destM && RegWrite_M) forwardSrcA <= 2'd2; // $rs dependent with instruction in MEM stage
-				else if (rs == destWB && RegWrite_WB) forwardSrcA <= 2'd3; // $rs dependent with instruction in WB stage
-				else forwardSrcA <= 2'd0; // $rs not dependent with any instruction
-
-				// update stage write signals according to MState, IFState
-				casex ({MState, IFState})
-					2'b0x : begin
-						{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
-					end
-					2'b10 : begin 
-						{btbWrite, btbSrc} <= {1'd1, 2'd1};
-						if (predictedPC != jrTarget) begin
-							flush <= 1'd1;
-							{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111;
-						end
-						else begin
-							flush <= 1'd0;
+							flush <= 1'b0; // mispredict branch target -> flush
 							{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111;
 						end
 					end
-					2'b11 : begin
-						{btbWrite, btbSrc} <= {1'd1, 2'd1};
-						{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
-					end
-				endcase
-				{isStall, isPredict} <= {1'd0, 1'd1};
-			end
-
-			// no dependency - JMP, JAL
-			else if (opcode == `OPCODE_JMP || opcode == `OPCODE_JAL) begin
-				// update stage write signals according to MState, IFState
-				casex ({MState, IFState})
-					2'b0x : begin
-						{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
-					end
-					2'b10 : begin 
-						{btbWrite, btbSrc} <= {1'd1, 2'd2};
-						if (predictedPC != jumpAddr) begin
+					else begin
+						{btbWrite, btbSrc} <= {1'd0, 2'd3};
+						if (predictedPC != nextPC) begin
 							flush <= 1'b1;
-							{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111;
+							{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= (!IFState)? 5'b00000 : 5'b11111;
 						end
 						else begin
 							flush <= 1'b0;
 							{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111;
 						end
+						flush <= (predictedPC != nextPC)? 1'd1 : 1'd0; // mispredict branch target -> flush 
 					end
-					2'b11 : begin
-						{btbWrite, btbSrc} <= {1'd1, 2'd2};
-						{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+				end
+				2'b11 : begin
+					{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+				end
+			endcase
+			{isStall, isPredict} <= {1'd0, 1'd1};
+		end
+
+		// use only $rs - NOT, TCP, SHL, SHR, WWD, ADI, ORI, LWD
+		else if ((opcode == `OPCODE_RTYPE && (func_code == `FUNC_NOT || func_code == `FUNC_TCP || func_code == `FUNC_SHL || func_code == `FUNC_SHR ||
+				func_code == `FUNC_WWD)) || opcode == `OPCODE_ADI || opcode == `OPCODE_ORI || opcode == `OPCODE_LWD) begin
+			// $rs dependence check
+			if (rs == destM && RegWrite_M) forwardSrcA <= 2'd2; // $rs dependent with instruction in MEM stage
+			else if (rs == destWB && RegWrite_WB) forwardSrcA <= 2'd3; // $rs dependent with instruction in WB stage
+			else forwardSrcA <= 2'd0; // $rs not dependent with any instruction
+
+			// update stage write signals according to MState, IFState
+			casex ({MState, IFState})
+				2'b0x : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
+				2'b10 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111; // stall PC
+				2'b11 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+			endcase
+			{isStall, btbWrite, btbSrc, flush, isPredict} <= {1'd0, 1'd0, 2'd0, 1'd0, 1'd0};
+		end
+
+		// use only $rs - BGZ, GLZ
+		else if (opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ) begin
+			// $rs dependence check
+			if (rs == destM && RegWrite_M) forwardSrcA <= 2'd2; // $rs dependent with instruction in MEM stage
+			else if (rs == destWB && RegWrite_WB) forwardSrcA <= 2'd3; // $rs dependent with instruction in WB stage
+			else forwardSrcA <= 2'd0; // $rs not dependent with any instruction
+			
+			// update stage write signals according to MState, IFState
+			casex ({MState, IFState})
+				2'b0x : begin
+					{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
+					{btbWrite, btbSrc, flush} <= {1'd0, 2'd0, 1'd0};
+				end
+				2'b10 : begin
+					// branch taken -> Write brTarget to BTB
+					if (bcond) begin
+						{btbWrite, btbSrc} <= {1'd1, 2'd0};
+						if (predictedPC != brTarget) begin
+							flush <= 1'b1; // mispredict branch target -> flush
+							{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= (!IFState)? 5'b00000 : 5'b11111;
+						end
+						else begin
+							flush <= 1'b0; // mispredict branch target -> flush
+							{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111;
+						end
 					end
-				endcase
-				{isStall, isPredict} <= {1'd0, 1'd1};
-			end
-			// no dependency - LHI
-			else if (opcode == `OPCODE_LHI) begin
-				// update stage write signals according to MState, IFState
-				casex ({MState, IFState})
-					2'b0x : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
-					2'b10 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111; // stall PC
-					2'b11 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
-				endcase
-				{isStall, btbWrite, btbSrc, flush, isPredict} <= {1'd0, 1'd0, 2'd0, 1'd0, 1'd0};
-			end
-			// no dependency - HLT
-			else begin 
-				// update stage write signals according to MState, IFState
-				casex ({MState, IFState})
-					2'b0x : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
-					2'b10 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111; // stall PC
-					2'b11 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
-				endcase
-				{isStall, btbWrite, btbSrc, flush, isPredict} <= {1'd0, 1'd0, 2'd0, 1'd1, 1'd0}; // flush = 1
-			end
+					else begin
+						{btbWrite, btbSrc} <= {1'd0, 2'd3};
+						if (predictedPC != nextPC) begin
+							flush <= 1'b1;
+							{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= (!IFState)? 5'b00000 : 5'b11111;
+						end
+						else begin
+							flush <= 1'b0;
+							{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111;
+						end
+						flush <= (predictedPC != nextPC)? 1'd1 : 1'd0; // mispredict branch target -> flush 
+					end
+				end
+				2'b11 : begin
+					{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+				end
+			endcase
+			{isStall, isPredict} <= {1'd0, 1'd1};
+		end
+
+		// use only $rs - JPR, JRL
+		else if (opcode == `OPCODE_RTYPE && (func_code == `FUNC_JPR || func_code == `FUNC_JRL)) begin
+			// $rs dependence check
+			if (rs == destM && RegWrite_M) forwardSrcA <= 2'd2; // $rs dependent with instruction in MEM stage
+			else if (rs == destWB && RegWrite_WB) forwardSrcA <= 2'd3; // $rs dependent with instruction in WB stage
+			else forwardSrcA <= 2'd0; // $rs not dependent with any instruction
+
+			// update stage write signals according to MState, IFState
+			casex ({MState, IFState})
+				2'b0x : begin
+					{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
+				end
+				2'b10 : begin 
+					{btbWrite, btbSrc} <= {1'd1, 2'd1};
+					if (predictedPC != jrTarget) begin
+						flush <= 1'd1;
+						{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= (!IFState)? 5'b00000 : 5'b11111;
+					end
+					else begin
+						flush <= 1'd0;
+						{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111;
+					end
+				end
+				2'b11 : begin
+					{btbWrite, btbSrc} <= {1'd1, 2'd1};
+					{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+				end
+			endcase
+			{isStall, isPredict} <= {1'd0, 1'd1};
+		end
+
+		// no dependency - JMP, JAL
+		else if (opcode == `OPCODE_JMP || opcode == `OPCODE_JAL) begin
+			// update stage write signals according to MState, IFState
+			casex ({MState, IFState})
+				2'b0x : begin
+					{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
+				end
+				2'b10 : begin 
+					{btbWrite, btbSrc} <= {1'd1, 2'd2};
+					if (predictedPC != jumpAddr) begin
+						flush <= 1'b1;
+						{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= (!IFState)? 5'b00000 : 5'b11111;
+					end
+					else begin
+						flush <= 1'b0;
+						{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111;
+					end
+				end
+				2'b11 : begin
+					{btbWrite, btbSrc} <= {1'd1, 2'd2};
+					{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+				end
+			endcase
+			{isStall, isPredict} <= {1'd0, 1'd1};
+		end
+		// no dependency - LHI
+		else if (opcode == `OPCODE_LHI) begin
+			// update stage write signals according to MState, IFState
+			casex ({MState, IFState})
+				2'b0x : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
+				2'b10 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111; // stall PC
+				2'b11 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+			endcase
+			{isStall, btbWrite, btbSrc, flush, isPredict} <= {1'd0, 1'd0, 2'd0, 1'd0, 1'd0};
+		end
+		// no dependency - HLT
+		else begin 
+			// update stage write signals according to MState, IFState
+			casex ({MState, IFState})
+				2'b0x : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
+				2'b10 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111; // stall PC
+				2'b11 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+			endcase
+			{isStall, btbWrite, btbSrc, flush, isPredict} <= {1'd0, 1'd0, 2'd0, 1'd1, 1'd0}; // flush = 1
 		end
 	end
 endmodule

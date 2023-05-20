@@ -33,7 +33,9 @@ module cache(
 
 	// cache hit
 	output i_cache_hit,
-	output d_cache_hit
+	output d_cache_hit,
+	output i_ready,
+	output d_ready
 );
 	parameter tagSize = 12; // bit size of tag field in 16 bit address
 	parameter blockNum = 4; // # of cache block
@@ -116,7 +118,11 @@ module cache(
 	always @(*) begin
 		// update i_nextState 
 		case(i_state)
-			RESET : i_nextState <= (i_readC && (i_tagBank[i_idx] != i_tag || !i_valid[i_idx]))? READ_M0 : RESET;
+			RESET : begin
+				if (d_state == RESET && (d_readC || d_writeC) && (d_tagBank[d_idx] != d_tag || !d_valid[d_idx]) && d_dirty[d_idx]) i_nextState <= RESET; // D-cache hit -> maintatin RESET
+				else if (i_readC && (i_tagBank[i_idx] != i_tag || !i_valid[i_idx])) i_nextState <= READ_M0;
+				else i_nextState <= RESET;
+			end
 			READ_M0 : i_nextState <= READ_M1;
 			READ_M1 : i_nextState <= READ_M2;
 			READ_M2 : i_nextState <= READ_M3;
@@ -126,7 +132,9 @@ module cache(
 		// update d_nextState
 		case (d_state)
 			RESET : begin
-				if ((d_readC || d_writeC) && (d_tagBank[d_idx] != d_tag || !d_valid[d_idx]) && d_dirty[d_idx]) d_nextState <= WRITE_M0;
+				if ((d_readC || d_writeC) && (d_tagBank[d_idx] != d_tag || !d_valid[d_idx]) && d_dirty[d_idx]) begin
+					d_nextState <= WRITE_M0;
+					if (i_state == RESET && i_readC && (i_tagBank[i_idx] != i_tag || !i_valid[i_idx])) 
 				else if (d_readC && (d_tagBank[d_idx] != d_tag || !d_valid[d_idx]) && !d_dirty[d_idx]) d_nextState <= READ_M0;
 				else d_nextState <= RESET;
 			end
@@ -155,7 +163,8 @@ module cache(
 				{i_readM, i_writeM, d_readM, d_writeM} <= 4'd0;
 				{i_outputDataC, d_outputDataC, i_outputDataM, d_outputDataM} <= {`WORD_SIZE'dz, `WORD_SIZE'dz, `FETCH_SIZE'dz, `FETCH_SIZE'dz};
 			end
-			{i_cache_hit, d_cache_hit} <= 2'b00;
+			{i_cache_hit, d_cache_hit} <= 2'b11;
+			{i_ready, d_ready} <= 2'b00;
 			{i_state, d_state} <= {RESET, RESET}; // reset state
 			{i_accessCnt, d_accessCnt, i_hitCnt, d_hitCnt} <= {`WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0}; // reset counter
 			{next_i_accessCnt, next_d_accessCnt, next_i_hitCnt, next_d_hitCnt} <= {`WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0}; // reset next_counter
@@ -205,7 +214,9 @@ module cache(
 				end
 			end
 			READ_M0 : i_readM <= 1'd1;
+			READ_M3 : i_ready <= 1'd1;
 			FETCH_READY : begin
+				i_ready <= 1'd0; i_cache_hit <= 1'd1;
 				case (i_blockOffset)
 					2'd0 : i_outputDataC <= i_dataBank[i_idx][7:0];
 					2'd1 : i_outputDataC <= i_dataBank[i_idx][15:8];
@@ -261,7 +272,9 @@ module cache(
 				d_readM <= 1'd1;
 				d_outputDataM <= `FETCH_SIZE'dz;
 			end
+			READ_M3 : d_ready <= 1'd1;
 			FETCH_READY : begin
+				d_ready <= 1'd0; d_cache_hit <= 1'd1;
 				// fetch data to datapath
 				case (d_blockOffset)
 					2'd0 : d_outputDataC <= d_dataBank[d_idx][7:0];
@@ -272,6 +285,9 @@ module cache(
 			end 
 			WRITE_M0 : d_writeM <= 1'd1;
 			WRITE_M3 : d_outputDataM <= d_dataBank[d_idx]; // transfer data to memory
+			WRITE_READY : begin
+				d_ready <= 1'd0; d_cache_hit <= 1'd1;
+			end
 		endcase
 	end
 

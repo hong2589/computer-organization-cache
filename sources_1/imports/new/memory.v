@@ -12,14 +12,14 @@ module Memory(
 	// I-memory interface
 	input i_readM,
 	input i_writeM,
-	input [`WORD_SIZE-1:0] i_addressM,
-	inout [`FETCH_SIZE-1:0] i_dataM,
+	input [`WORD_SIZE-1:0] i_address,
+	inout [`FETCH_SIZE-1:0] i_data,
 	
 	// D-memory interface
 	input d_readM,
 	input d_writeM,
-	input [`WORD_SIZE-1:0] d_addressM,
-	inout [`FETCH_SIZE-1:0] d_dataM
+	input [`WORD_SIZE-1:0] d_address,
+	inout [`FETCH_SIZE-1:0] d_data
 );	
 	// parameter for memory state
 	parameter RESET = 4'h0;
@@ -43,8 +43,8 @@ module Memory(
 	reg [`FETCH_SIZE-1:0] d_outputData;
 	
 	// fetch instruction & data
-	assign i_dataM = i_outputData;
-	assign d_dataM = d_outputData;
+	assign i_data = i_outputData;
+	assign d_data = d_outputData;
 
 	// update i_nextStateM, d_nextStateM
 	always @(*) begin
@@ -82,7 +82,7 @@ module Memory(
 		else begin
 			{i_stateM, d_stateM} <= {i_nextStateM, d_nextStateM}; // update current state(i_stateM, d_stateM)
 			if (d_stateM == STORE3) begin
-				{memory[d_addressM+3], memory[d_addressM+2], memory[d_addressM+1], memory[d_addressM]} <= d_dataM;
+				{memory[d_address+3], memory[d_address+2], memory[d_address+1], memory[d_address]} <= d_data;
 			end
 		end
 	end
@@ -91,14 +91,14 @@ module Memory(
 	always @(*) begin
 		// update i_outputData
 		if (i_stateM == FETCH3) begin
-			i_outputData <= {memory[i_addressM+3], memory[i_addressM+2], memory[i_addressM+1], memory[i_addressM]};
+			i_outputData <= {memory[i_address+3], memory[i_address+2], memory[i_address+1], memory[i_address]};
 		end 
 		else i_outputData <= `FETCH_SIZE'dz;
 
 		// update d_outputData
 		if (d_stateM == RESET) d_outputData <= `FETCH_SIZE'dz;
 		else if (d_stateM == FETCH3) begin
-			d_outputData <= {memory[d_addressM+3], memory[d_addressM+2], memory[d_addressM+1], memory[d_addressM]};
+			d_outputData <= {memory[d_address+3], memory[d_address+2], memory[d_address+1], memory[d_address]};
 		end
 		else d_outputData <= `FETCH_SIZE'dz;
 	end

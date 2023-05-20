@@ -5,20 +5,20 @@
 `define FETCH_SIZE 64
 
 module cpu(
-    input clk, 
-    input reset_n, 
+    input Clk, 
+    input Reset_N, 
 
     // Instruction memory interface
     output i_readM, 
     output i_writeM, 
-    output [`WORD_SIZE-1:0] i_addressM, 
-    inout [`WORD_SIZE-1:0] i_dataM, 
+    output [`WORD_SIZE-1:0] i_address, 
+    inout [`FETCH_SIZE-1:0] i_data, 
 
 	// Data memory interface
     output d_readM, 
     output d_writeM, 
-    output [`WORD_SIZE-1:0] d_addressM, 
-    inout [`WORD_SIZE-1:0] d_dataM, 
+    output [`WORD_SIZE-1:0] d_address, 
+    inout [`FETCH_SIZE-1:0] d_data, 
 
     output [`WORD_SIZE-1:0] num_inst, 
     output [`WORD_SIZE-1:0] output_port, 
@@ -89,6 +89,9 @@ module cpu(
 	wire d_readM; wire d_writeM; wire [`WORD_SIZE-1:0] d_addressM; wire [`FETCH_SIZE-1:0] d_dataM; 
 	// cache hit indicator
 	wire i_cache_hit; wire d_cache_hit;
+	wire i_ready; wire d_ready;
+
+	assign {i_address, i_data, d_address, d_data} = {i_addressM, i_dataM, d_addressM, d_dataM};
 
 	// In cpu module, three submodules interact each other - datapath, control_unit, and hazard_control.
 
@@ -97,8 +100,8 @@ module cpu(
 	// It is typically controlled by control_unit, but if there is data/control hazard, 
 	// it is controlled by hazard_control by flush signals and latch-enable signals for pipeline stage registers
 	datapath DP (
-		.clk(clk),
-		.reset_n(reset_n),
+		.clk(Clk),
+		.reset_n(Reset_N),
 		.opcode(opcode),
 		.func_code(func_code),
 		.i_address(i_addressC),
@@ -152,8 +155,8 @@ module cpu(
 	// It also transfers RegWrite signals from different pipeline stages to control_hazard module,
 	// which enable the control_hazard module to detect data hazard. 
 	control_unit Control (
-		.clk(clk),
-		.reset_n(reset_n),
+		.clk(Clk),
+		.reset_n(Reset_N),
 		.opcode(opcode),
 		.func_code(func_code),
 		.bcond(bcond),
@@ -165,14 +168,14 @@ module cpu(
 		.opcode_M(opcode_M),
 		.opcode_WB(opcode_WB),
 		.num_inst(num_inst),
-		.i_writeM(i_writeM),
-		.i_readM(i_readM),
+		.i_writeC(i_writeC),
+		.i_readC(i_readC),
 		.isWWD_WB(isWWD_WB),
 		.RegDst(RegDst),
 		.ALUOp(ALUOp),
 		.ALUSrcB(ALUSrcB),		
-		.d_writeM(d_writeM),
-		.d_readM(d_readM),
+		.d_writeC(d_writeC),
+		.d_readC(d_readC),
 		.RegWrite(RegWrite),
 		.WBSrc(WBSrc),
 		.is_halted(is_halted),
@@ -185,8 +188,8 @@ module cpu(
 	// It detects hazard situations, and stop(stall) datapath by stage latch enable signals(PCWrite, IDWrite, EXWrite, MWrite, WBWrite)
 	// and flush the instructions in datapath by flush signal.
 	hazard_control HC (
-		.clk(clk),
-		.reset_n(reset_n),
+		.clk(Clk),
+		.reset_n(Reset_N),
 		.rs(rs),
 		.rt(rt),
 		.opcode(opcode),
@@ -203,6 +206,8 @@ module cpu(
 		.RegWrite_M(RegWrite_M),
 		.RegWrite_WB(RegWrite_WB),
 		.is_halted(is_halted),
+		.i_cache_hit(i_cache_hit),
+		.d_cache_hit(d_cache_hit),
 		.destEX(destEX),
 		.destM(destM),
 		.destWB(destWB),
@@ -226,8 +231,8 @@ module cpu(
 	// If referenced data exists in cache(cache hit), then transmit the data to datapath without memory access.
 	// cache access latency is 1 cycle and memory access latency is 4 cycles.
 	cache cache(
-		.clk(clk),
-		.reset_n(reset_n),
+		.clk(Clk),
+		.reset_n(Reset_N),
 		.IFState(IFState),
 		.i_readC(i_readC),
 		.i_writeC(i_writeC),
@@ -247,7 +252,9 @@ module cpu(
 		.d_addressM(d_addressM),
 		.d_dataM(d_dataM),
 		.i_cache_hit(i_cache_hit),
-		.d_cache_hit(d_cache_hit)
+		.d_cache_hit(d_cache_hit),
+		.i_ready(i_ready),
+		.d_ready(d_ready)
 	);
 
 endmodule
