@@ -178,14 +178,22 @@ module cache(
 				i_tagBank[i_idx] <= i_addressC[15:4];
 				i_valid[i_idx] <= 1'd1;
 			end
-
 			if (d_state == READ_M3) begin
 				// update d_dataBank, d_tagBank, d_valid from D-memory
 				d_dataBank[d_idx] <= d_dataM; 
 				d_tagBank[d_idx] <= d_addressC[15:4];
 				d_valid[d_idx] <= 1'd1;
 			end
-			else if (d_state == WRITE_READY) begin // write D-cache(SWD) & dirty = 1
+			else if (d_state == RESET && d_writeC && d_tagBank[d_idx] == d_tag && d_valid[d_idx]) begin
+				case (d_blockOffset)
+					2'd0 : d_dataBank[d_idx][15:0] <= d_dataC;
+					2'd1 : d_dataBank[d_idx][31:16] <= d_dataC;
+					2'd2 : d_dataBank[d_idx][47:32] <= d_dataC;
+					2'd3 : d_dataBank[d_idx][63:48] <= d_dataC;
+				endcase
+				d_dirty[d_idx] <= 1'b1;
+			end
+			else if (d_state == WRITE_READY) begin
 				case (d_blockOffset)
 					2'd0 : d_dataBank[d_idx][15:0] <= d_dataC;
 					2'd1 : d_dataBank[d_idx][31:16] <= d_dataC;
@@ -270,14 +278,8 @@ module cache(
 						d_outputDataC <= `WORD_SIZE'dz;
 						// D-cache hit -> update d_dataBank, dirty = 1
 						if (d_tagBank[d_idx] == d_tag && d_valid[d_idx]) begin
-							case (d_blockOffset)
-								2'd0 : d_dataBank[d_idx][15:0] <= d_dataC;
-								2'd1 : d_dataBank[d_idx][31:16] <= d_dataC;
-								2'd2 : d_dataBank[d_idx][47:32] <= d_dataC;
-								2'd3 : d_dataBank[d_idx][63:48] <= d_dataC;
-							endcase
-							d_dirty[d_idx] <= 1'b1;
-							d_cache_hit <= 1'b1; next_d_hitCnt <= d_hitCnt + `WORD_SIZE'd1;
+							d_cache_hit <= 1'b1; 
+							next_d_hitCnt <= d_hitCnt + `WORD_SIZE'd1;
 						end
 						// D-cache miss
 						else begin
