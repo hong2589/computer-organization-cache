@@ -35,7 +35,8 @@ module cache(
 	output i_cache_hit,
 	output d_cache_hit,
 	output i_ready,
-	output d_ready
+	output d_ready,
+	input both_access
 );
 	reg [`WORD_SIZE-1:0] i_hitCnt; // counter for I-cache hit
 	reg [`WORD_SIZE-1:0] d_hitCnt; // counter for D-cache hit
@@ -122,7 +123,7 @@ module cache(
 			// update i_nextState 
 			case(i_state)
 				RESET : begin
-					if (d_state == RESET && (d_readC || d_writeC) && (d_tagBank[d_idx] != d_tag || !d_valid[d_idx]) && d_dirty[d_idx]) i_nextState <= RESET; // D-cache hit -> maintatin RESET
+					if (d_state == RESET && (d_readC || d_writeC) && (d_tagBank[d_idx] != d_tag || !d_valid[d_idx])) i_nextState <= RESET; // D-cache miss -> maintatin i_state to RESET
 					else if (i_readC && (i_tagBank[i_idx] != i_tag || !i_valid[i_idx])) i_nextState <= READ_M0;
 					else i_nextState <= RESET;
 				end
@@ -130,7 +131,10 @@ module cache(
 				READ_M1 : i_nextState <= READ_M2;
 				READ_M2 : i_nextState <= READ_M3;
 				READ_M3 : i_nextState <= FETCH_READY;
-				FETCH_READY : i_nextState <= RESET;
+				FETCH_READY : begin
+					if (both_access && (d_state != FETCH_READY && d_state != WRITE_READY)) i_nextState <= FETCH_READY;
+					else i_nextState <= RESET;
+				end
 			endcase
 			// update d_nextState
 			case (d_state)

@@ -84,6 +84,7 @@ module cpu(
 	// cache hit indicator
 	wire i_cache_hit; wire d_cache_hit;
 	wire i_ready; wire d_ready;
+	wire both_access; 
 
 	// assign {i_address, i_data, d_address, d_data} = {i_addressM, i_dataM, d_addressM, d_dataM};
 
@@ -172,7 +173,8 @@ module cpu(
 		.is_halted(is_halted),
 		.RegWrite_EX(RegWrite_EX),
 		.RegWrite_M(RegWrite_M), 
-		.RegWrite_WB(RegWrite_WB) 
+		.RegWrite_WB(RegWrite_WB),
+		.flush_EX(flush_EX)
 	);
 
 	// 3. hazard_control : manage data/control hazard situations, resolve the hazard
@@ -199,6 +201,7 @@ module cpu(
 		.d_cache_hit(d_cache_hit),
 		.i_ready(i_ready),
 		.d_ready(d_ready),
+		.both_access(both_access),
 		.destEX(destEX),
 		.destM(destM),
 		.destWB(destWB),
@@ -244,7 +247,8 @@ module cpu(
 		.i_cache_hit(i_cache_hit),
 		.d_cache_hit(d_cache_hit),
 		.i_ready(i_ready),
-		.d_ready(d_ready)
+		.d_ready(d_ready),
+		.both_access(both_access)
 	);
 
 endmodule

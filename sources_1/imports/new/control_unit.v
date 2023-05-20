@@ -41,7 +41,8 @@ module control_unit (
 	// transfer control signal to Hazard_control
 	output RegWrite_EX, // RegWrite in ID/EX
 	output RegWrite_M, // RegWrite in EX/MEM
-	output RegWrite_WB // RegWrite in MEM/WB
+	output RegWrite_WB, // RegWrite in MEM/WB
+	input flush_EX
 ); 
 	// output register
 	reg [`WORD_SIZE-1:0] num_inst;
@@ -133,105 +134,128 @@ module control_unit (
 					`OPCODE_RTYPE : begin
 						case(func_code)
 							`FUNC_ADD : begin
-								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-									<= {1'd0, 2'd1, `ALU_ADD, 2'd0, 1'd1, 2'd1, 1'd0};
+								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+									<= {1'd0, 2'd1, `ALU_ADD, 2'd0, 2'd1, 1'd0};
+									RegWrite_EX <= (flush_EX)? 1'd0 : 1'd1;
 							end
 							`FUNC_SUB : begin
-								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-									<= {1'd0, 2'd1, `ALU_SUB, 2'd0, 1'd1, 2'd1, 1'd0};
+								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+									<= {1'd0, 2'd1, `ALU_SUB, 2'd0, 2'd1, 1'd0};
+									RegWrite_EX <= (flush_EX)? 1'd0 : 1'd1;
 							end
 							`FUNC_AND : begin
-								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-									<= {1'd0, 2'd1, `ALU_AND, 2'd0, 1'd1, 2'd1, 1'd0};
+								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+									<= {1'd0, 2'd1, `ALU_AND, 2'd0, 2'd1, 1'd0};
+									RegWrite_EX <= (flush_EX)? 1'd0 : 1'd1;
 							end
 							`FUNC_ORR : begin
-								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-									<= {1'd0, 2'd1, `ALU_ORR, 2'd0, 1'd1, 2'd1, 1'd0};
+								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+									<= {1'd0, 2'd1, `ALU_ORR, 2'd0, 2'd1, 1'd0};
+									RegWrite_EX <= (flush_EX)? 1'd0 : 1'd1;
 							end
 							`FUNC_NOT : begin
-								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-									<= {1'd0, 2'd1, `ALU_NOT, 2'd0, 1'd1, 2'd1, 1'd0};
+								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+									<= {1'd0, 2'd1, `ALU_NOT, 2'd0, 2'd1, 1'd0};
+									RegWrite_EX <= (flush_EX)? 1'd0 : 1'd1;
 							end
 							`FUNC_TCP : begin
-								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-									<= {1'd0, 2'd1, `ALU_TCP, 2'd0, 1'd1, 2'd1, 1'd0};
+								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+									<= {1'd0, 2'd1, `ALU_TCP, 2'd0, 2'd1, 1'd0};
+									RegWrite_EX <= (flush_EX)? 1'd0 : 1'd1;
 							end
 							`FUNC_SHL : begin
-								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-									<= {1'd0, 2'd1, `ALU_SHL, 2'd0, 1'd1, 2'd1, 1'd0};
+								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+									<= {1'd0, 2'd1, `ALU_SHL, 2'd0, 2'd1, 1'd0};
+									RegWrite_EX <= (flush_EX)? 1'd0 : 1'd1;
 							end
 							`FUNC_SHR : begin
-								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-									<= {1'd0, 2'd1, `ALU_SHR, 2'd0, 1'd1, 2'd1, 1'd0};
+								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+									<= {1'd0, 2'd1, `ALU_SHR, 2'd0, 2'd1, 1'd0};
+									RegWrite_EX <= (flush_EX)? 1'd0 : 1'd1;
 							end
 							`FUNC_WWD : begin
-								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-									<= {1'd1, 2'd0, `ALU_ID_A, 2'd0, 1'd0, 2'd1, 1'd0}; 
+								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+									<= {1'd1, 2'd0, `ALU_ID_A, 2'd0, 2'd1, 1'd0}; 
+									RegWrite_EX <= (flush_EX)? 1'd0 : 1'd0;
 							end
 							`FUNC_JPR : begin
-								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-									<= {1'd0, 2'd0, `ALU_ID_A, 2'd0, 1'd0, 2'd1, 1'd0};
+								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+									<= {1'd0, 2'd0, `ALU_ID_A, 2'd0, 2'd1, 1'd0};
+									RegWrite_EX <= (flush_EX)? 1'd0 : 1'd0;
 							end
 							`FUNC_JRL : begin
-								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-									<= {1'd0, 2'd2, `ALU_ID_A, 2'd0, 1'd1, 2'd2, 1'd0};
+								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+									<= {1'd0, 2'd2, `ALU_ID_A, 2'd0, 2'd2, 1'd0};
+									RegWrite_EX <= (flush_EX)? 1'd0 : 1'd1;
 							end
 							`FUNC_HLT : begin
-								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-									<= {1'd0, 2'd0, `ALU_ID_A, 2'd0, 1'd0, 2'd1, 1'd1}; // is_halted_EX = 1'd1
+								{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+									<= {1'd0, 2'd0, `ALU_ID_A, 2'd0, 2'd1, 1'd1}; // is_halted_EX = 1'd1
+									RegWrite_EX <= (flush_EX)? 1'd0 : 1'd0;
 							end 
 						endcase
 					end
 					`OPCODE_ADI : begin // ADI
-						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-							<= {1'd0, 2'd0, `ALU_ADD, 2'd1, 1'd1, 2'd1, 1'd0};
+						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+							<= {1'd0, 2'd0, `ALU_ADD, 2'd1, 2'd1, 1'd0};
+							RegWrite_EX <= (flush_EX)? 1'd0 : 1'd1;
 					end
 					`OPCODE_ORI : begin // ORI
-						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-							<= {1'd0, 2'd0, `ALU_ORR, 2'd3, 1'd1, 2'd1, 1'd0};
+						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+							<= {1'd0, 2'd0, `ALU_ORR, 2'd3, 2'd1, 1'd0};
+							RegWrite_EX <= (flush_EX)? 1'd0 : 1'd1;
 					end
 					`OPCODE_LHI : begin // LHI
-						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-							<= {1'd0, 2'd0, `ALU_ID_B, 2'd2, 1'd1, 2'd1, 1'd0};
+						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+							<= {1'd0, 2'd0, `ALU_ID_B, 2'd2, 2'd1, 1'd0};
+							RegWrite_EX <= (flush_EX)? 1'd0 : 1'd1;
 					end
 					`OPCODE_LWD : begin // LWD
-						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-							<= {1'd0, 2'd0, `ALU_ADD, 2'd1, 1'd1, 2'd0, 1'd0};
+						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+							<= {1'd0, 2'd0, `ALU_ADD, 2'd1, 2'd0, 1'd0};
+							RegWrite_EX <= (flush_EX)? 1'd0 : 1'd1;
 					end
 					`OPCODE_SWD : begin // SWD
-						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-							<= {1'd0, 2'd0, `ALU_ADD, 2'd1, 1'd0, 2'd0, 1'd0};
+						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+							<= {1'd0, 2'd0, `ALU_ADD, 2'd1, 2'd0, 1'd0};
+							RegWrite_EX <= (flush_EX)? 1'd0 : 1'd0;
 					end
 					`OPCODE_BNE : begin // BNE
-						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-							<= {1'd0, 2'd0, `ALU_ID_A, 2'd0, 1'd0, 2'd1, 1'd0};
+						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+							<= {1'd0, 2'd0, `ALU_ID_A, 2'd0, 2'd1, 1'd0};
+							RegWrite_EX <= (flush_EX)? 1'd0 : 1'd0;
 					end
 					`OPCODE_BEQ : begin // BEQ
-						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-							<= {1'd0, 2'd0, `ALU_ID_A, 2'd0, 1'd0, 2'd1, 1'd0};
+						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+							<= {1'd0, 2'd0, `ALU_ID_A, 2'd0, 2'd1, 1'd0};
+							RegWrite_EX <= (flush_EX)? 1'd0 : 1'd0;
 					end
 					`OPCODE_BGZ : begin // BGZ
-						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-							<= {1'd0, 2'd0, `ALU_ID_A, 2'd0, 1'd0, 2'd1, 1'd0};
+						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+							<= {1'd0, 2'd0, `ALU_ID_A, 2'd0, 2'd1, 1'd0};
+							RegWrite_EX <= (flush_EX)? 1'd0 : 1'd0;
 					end
 					`OPCODE_BLZ : begin // BLZ
-						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-							<= {1'd0, 2'd0, `ALU_ID_A, 2'd0, 1'd0, 2'd1, 1'd0};
+						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+							<= {1'd0, 2'd0, `ALU_ID_A, 2'd0, 2'd1, 1'd0};
+							RegWrite_EX <= (flush_EX)? 1'd0 : 1'd0;
 					end
 					`OPCODE_JMP : begin // JMP
-						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-							<= {1'd0, 2'd0, `ALU_ID_A, 2'd0, 1'd0, 2'd1, 1'd0};
+						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+							<= {1'd0, 2'd0, `ALU_ID_A, 2'd0, 2'd1, 1'd0};
+							RegWrite_EX <= (flush_EX)? 1'd0 : 1'd0;
 					end
 					`OPCODE_JAL : begin // JAL
-						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
-							<= {1'd0, 2'd2, `ALU_ID_A, 2'd0, 1'd1, 2'd2, 1'd0}; // RegDst_EX = 2'd2, RegWrite_EX = 1'd1, WBSrc_EX = 2'd2
+						{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
+							<= {1'd0, 2'd2, `ALU_ID_A, 2'd0, 2'd2, 1'd0}; // RegDst_EX = 2'd2, RegWrite_EX = 1'd1, WBSrc_EX = 2'd2
+							RegWrite_EX <= (flush_EX)? 1'd0 : 1'd1;
 					end
 				endcase
 			end
 			else begin // EXWrite==0 -> maintain current ID/EX control signals
 				{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
 					<= {isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX};
-				RegWrite_EX <= RegWrite_EX;
+				RegWrite_EX <= (flush_EX)? 1'b0 : RegWrite_EX;
 			end
 		end
 	end

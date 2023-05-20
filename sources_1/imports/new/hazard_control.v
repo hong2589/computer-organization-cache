@@ -21,11 +21,12 @@ module hazard_control (
 	input RegWrite_WB, // Register write signal in WB
 	input is_halted, // signal indicating HLT instruction committed
 
-	// cache hit signal from cache
+	// interface with cache
 	input i_cache_hit,
 	input d_cache_hit,
 	input i_ready,
 	input d_ready,
+	output both_access,
 
 	// WB destination from datapath
 	input [1:0] destEX, // WB register address in EX
@@ -66,12 +67,13 @@ module hazard_control (
 	reg isPredict; 
 
 	// state parameters, registers
-	parameter RESET = 2'd0;
-	parameter ACCESS_I = 2'd1;
-	parameter ACCESS_D = 2'd2;
-	parameter HAZARD_STALL = 2'd3;
-	reg [1:0] control_state;
-	reg [1:0] next_control_state;
+	parameter RESET = 3'd0;
+	parameter ACCESS_I = 3'd1;
+	parameter ACCESS_D = 3'd2;
+	parameter HAZARD_STALL = 3'd3;
+	parameter BOTH_I_D = 3'd4;
+	reg [2:0] control_state;
+	reg [2:0] next_control_state;
 
 	// LWD hazard indicator
 	wire rs_dependence_EX; wire rs_dependence_M; wire rs_dependence_WB; // indicate whether there is data dependence on rs register
@@ -93,6 +95,9 @@ module hazard_control (
 						 (rt_dependence_M && use_rt_ID)? 2'd2 :
 						 (rt_dependence_WB && use_rt_ID)? 2'd3 : 2'd0;
 
+	// transfer the hazard_control state to cache
+	assign both_access = (control_state == BOTH_I_D);
+
 	// update next_control_state
 	always @(*) begin
 		if (!reset_n) next_control_state <= RESET;
@@ -105,9 +110,14 @@ module hazard_control (
 						2'b11 : next_control_state <= (LWD_dependence_hazard)? HAZARD_STALL : RESET;
 					endcase
 				end
-				ACCESS_I : next_control_state <= (i_ready)? RESET : ACCESS_I;
+				ACCESS_I : begin
+					if (!d_cache_hit) next_control_state <= BOTH_I_D;
+					else if (i_ready) next_control_state <= RESET;
+					else next_control_state <= ACCESS_I;
+				end
 				ACCESS_D : next_control_state <= (d_ready)? RESET : ACCESS_D;
 				HAZARD_STALL : next_control_state <= RESET;
+				BOTH_I_D : next_control_state <= (i_ready && d_ready)? RESET : BOTH_I_D;
 			endcase
 		end
 	end
@@ -176,7 +186,11 @@ module hazard_control (
 					endcase
 				end
 				ACCESS_I : begin
-					if (i_ready) begin
+					if (!d_cache_hit) begin
+						flush <= 1'd0; flush_EX <= 1'd0;
+						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
+					end
+					else if (i_ready) begin
 						flush_EX <= 1'd1; // flush_EX <= 1'd1
 						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
 						if (opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ) begin
@@ -205,7 +219,7 @@ module hazard_control (
 					end
 					else begin
 						flush <= 1'd0; flush_EX <= 1'd1;
-						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00111; // stall IF, ID
+						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= (!d_cache_hit)? 5'b00000 : 5'b00111; // stall IF, ID
 					end
 				end
 				ACCESS_D : begin 
@@ -265,6 +279,39 @@ module hazard_control (
 					end
 					else begin
 						{btbWrite, btbSrc, flush, isPredict} <= {1'd0, 2'd0, 1'd0, 1'd0};
+					end
+				end
+				BOTH_I_D : begin
+					if (i_ready && d_ready) begin
+						flush_EX <= 1'd1;
+						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
+						if (opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ) begin
+							isPredict <= 1'd1;
+							if (bcond) begin
+								{btbWrite, btbSrc} <= {1'd1, 2'd0};
+								flush <= (predictedPC != brTarget)? 1'd1 : 1'd0;
+							end
+							else begin
+								{btbWrite, btbSrc} <= {1'd0, 2'd3};
+								flush <= (predictedPC != nextPC)? 1'd1 : 1'd0;
+							end
+						end
+						else if (opcode == `OPCODE_RTYPE && (func_code == `FUNC_JPR || func_code == `FUNC_JRL)) begin
+							{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd1, 1'd1};
+							flush <= (predictedPC != jrTarget)? 1'd1 : 1'd0;
+						end
+						else if (opcode == `OPCODE_JMP || opcode == `OPCODE_JAL) begin
+							{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd2, 1'd1};
+							flush <= (predictedPC != jumpAddr)? 1'd1 : 1'd0;
+						end
+						else begin
+							{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
+							flush <= 1'd0;
+						end
+					end
+					else begin
+						flush <= 1'd0; flush_EX <= 1'd0;
+						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
 					end
 				end
 			endcase

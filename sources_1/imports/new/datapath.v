@@ -293,9 +293,11 @@ module datapath (
 
 			// MEM -> WB : update only when WBWrite == 1(not stall)
 			if (WBWrite) begin
-				{PC_WB_reg, lwData_reg, wbData_reg, destWB_reg, output_port_WB_reg, opcode_WB_reg, func_code_WB_reg}
-					<= {PC_M_reg, d_data, ALUOut_reg, destM, output_port_M, opcode_M_reg, func_code_M_reg};
+				{PC_WB_reg, lwData_reg, wbData_reg, destWB_reg, output_port_WB_reg, func_code_WB_reg}
+					<= {PC_M_reg, d_data, ALUOut_reg, destM, output_port_M, func_code_M_reg};
+				opcode_WB_reg <= opcode_M_reg;
 			end
+			else opcode_WB_reg <= `OPCODE_FLUSH;
 
 			// update output_port only when isWWD_WB == 1 (isWWD_WB is the signal indicating WWD instruction in WB stage)
 			output_port <= (isWWD_WB)? output_port_WB_reg : output_port;
