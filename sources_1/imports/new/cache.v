@@ -151,8 +151,8 @@ module cache(
 				READ_M1 : d_nextState <= READ_M2;
 				READ_M2 : d_nextState <= READ_M3;
 				READ_M3 : d_nextState <= (d_readC)? FETCH_READY : WRITE_READY;
-				FETCH_READY : d_nextState <= RESET;
-				WRITE_READY : d_nextState <= RESET;
+				FETCH_READY : d_nextState <= (i_state != FETCH_READY)? FETCH_READY : RESET;
+				WRITE_READY : d_nextState <= (i_state != FETCH_READY)? WRITE_READY : RESET;
 			endcase
 		end
 	end

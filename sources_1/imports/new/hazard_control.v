@@ -82,7 +82,8 @@ module hazard_control (
 	wire LWD_dependence_hazard; // indicate the stall case : LWD in EX stage and data dependence exists with the instruction in ID stage
 	assign {rs_dependence_EX, rs_dependence_M, rs_dependence_WB} = {(rs == destEX & RegWrite_EX), (rs == destM & RegWrite_M), (rs == destWB & RegWrite_WB)};
 	assign {rt_dependence_EX, rt_dependence_M, rt_dependence_WB} = {(rt == destEX & RegWrite_EX), (rt == destM & RegWrite_M), (rt == destWB & RegWrite_WB)};
-	assign use_rs_ID = (opcode == `OPCODE_RTYPE && func_code != `FUNC_HLT) || opcode == `OPCODE_SWD || opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ;
+	assign use_rs_ID = (opcode == `OPCODE_RTYPE && func_code != `FUNC_HLT) || opcode == `OPCODE_SWD || opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ || 
+						opcode == `OPCODE_ADI || opcode == `OPCODE_ORI || opcode == `OPCODE_LWD;
 	assign use_rt_ID = (opcode == `OPCODE_RTYPE && (func_code == `FUNC_ADD || func_code == `FUNC_SUB || func_code == `FUNC_AND || func_code == `FUNC_ORR))
 						|| opcode == `OPCODE_SWD || opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ;
 	assign LWD_dependence_hazard = (opcode_EX == `OPCODE_LWD) && ((use_rs_ID && rs_dependence_EX) || (use_rt_ID && rt_dependence_EX));
@@ -115,7 +116,7 @@ module hazard_control (
 					else if (i_ready) next_control_state <= RESET;
 					else next_control_state <= ACCESS_I;
 				end
-				ACCESS_D : next_control_state <= (d_ready)? RESET : ACCESS_D;
+				ACCESS_D : next_control_state <= (i_ready && d_ready)? RESET : ACCESS_D;
 				HAZARD_STALL : next_control_state <= RESET;
 				BOTH_I_D : next_control_state <= (i_ready && d_ready)? RESET : BOTH_I_D;
 			endcase
