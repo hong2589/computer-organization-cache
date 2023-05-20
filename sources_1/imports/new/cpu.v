@@ -47,10 +47,10 @@ module cpu(
 
 	// control signals from hazard_control to datapath
 	wire PCWrite; // PCWrite enable signal
-	wire IFWrite; // IF/ID update enable signal
-	wire IDWrite; // ID/EX update enable signal
-	wire EXWrite; // EX/MEM update enable signal
-	wire MWrite; // MEM/WB update enable signal
+	wire IDWrite; // IF/ID update enable signal
+	wire EXWrite; // ID/EX update enable signal
+	wire MWrite; // EX/MEM update enable signal
+	wire WBWrite; // MEM/WB update enable signal
 	wire [1:0] btbSrc; // select signal for address to update BTB. 0: brTarget, 1: rfData_1, 2: jumpAddr
 	wire btbWrite; // BTB write enable signal
 	wire flush; // flush signal to disenable all the control signal from EX
@@ -120,10 +120,10 @@ module cpu(
 		.RegWrite(RegWrite), 
 		.WBSrc(WBSrc), 
 		.PCWrite(PCWrite),
-		.IFWrite(IFWrite),
 		.IDWrite(IDWrite),
 		.EXWrite(EXWrite),
 		.MWrite(MWrite),
+		.WBWrite(WBWrite),
 		.btbSrc(btbSrc),
 		.btbWrite(btbWrite),
 		.flush(flush),
@@ -150,7 +150,7 @@ module cpu(
 	);
 
 	// 2. control_unit : manage all the control signals used in datapath, control_hazard modules
-	// It transfers different control signals to datapath, like multipe pipeline latch write signals(EXWrite, MWrite ...),
+	// It transfers different control signals to datapath, like multipe pipeline latch write signals(MWrite, WBWrite ...),
 	// and control units contained in datapath(ALU, RF)
 	// It also transfers RegWrite signals from different pipeline stages to control_hazard module,
 	// which enable the control_hazard module to detect data hazard. 
@@ -160,9 +160,9 @@ module cpu(
 		.opcode(opcode),
 		.func_code(func_code),
 		.bcond(bcond),
-		.IDWrite(IDWrite),
 		.EXWrite(EXWrite),
 		.MWrite(MWrite),
+		.WBWrite(WBWrite),
 		.IFState(IFState),
 		.MState(MState),
 		.opcode_M(opcode_M),
@@ -185,7 +185,7 @@ module cpu(
 	);
 
 	// 3. hazard_control : manage data/control hazard situations, resolve the hazard
-	// It detects hazard situations, and stop(stall) datapath by stage latch enable signals(PCWrite, IDWrite, EXWrite, MWrite, WBWrite)
+	// It detects hazard situations, and stop(stall) datapath by stage latch enable signals(PCWrite, EXWrite, MWrite, WBWrite, WBWrite)
 	// and flush the instructions in datapath by flush signal.
 	hazard_control HC (
 		.clk(Clk),
@@ -215,10 +215,10 @@ module cpu(
 		.predictedPC(predictedPC),
 		.nextPC(nextPC),
 		.PCWrite(PCWrite),
-		.IFWrite(IFWrite),
 		.IDWrite(IDWrite),
 		.EXWrite(EXWrite),
 		.MWrite(MWrite),
+		.WBWrite(WBWrite),
 		.btbSrc(btbSrc),
 		.btbWrite(btbWrite),
 		.flush(flush),

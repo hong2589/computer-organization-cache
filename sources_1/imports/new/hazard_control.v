@@ -39,10 +39,10 @@ module hazard_control (
 
 	// control signal for stage latch registers
 	output PCWrite, // PC write enable signal
-	output IFWrite, // IF/ID write enable signal
-	output IDWrite, // ID/EX write enable signal
-	output EXWrite, // EX/M write enable signal
-	output MWrite, // M/WB write enable signal
+	output IDWrite, // IF/ID write enable signal
+	output EXWrite, // ID/EX write enable signal
+	output MWrite, // EX/M write enable signal
+	output WBWrite, // M/WB write enable signal
 
 	// control signals for branch/jump prediction
 	output [1:0] btbSrc, // select signal for BTB update. 0 : brTarget, 1: rfData_1, 2: jumpAddr, 3: nextPC
@@ -54,8 +54,8 @@ module hazard_control (
 	output [1:0] forwardSrcA, // 1st forward source select signal
 	output [1:0] forwardSrcB // 2nd forward source select signal
 ); 
-	// stage write enable signals 
-	reg PCWrite; reg IFWrite; reg IDWrite; reg EXWrite; reg MWrite;
+	// stage write enable IDWrite
+	reg PCWrite; reg IFWrite; reg EXWrite; reg MWrite; reg WBWrite;
 
 	// signals about control prediction
 	reg [1:0] btbSrc; // select signal for btb write
@@ -105,8 +105,8 @@ module hazard_control (
 
 	// update synchronously
 	always @(posedge clk, negedge reset_n) begin
-		if (!reset_n) begin
-			{PCWrite , IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // turn on all the write signals
+		if (!reset_n) IDWrite
+			{PCWrite , IFWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // turn on all the write signals
 			{btbSrc, btbWrite, flush} <= 4'b0000; // disable BTB write, reset flush to 0
 			{isStall, forwardSrcA, forwardSrcB, isPredict} <= {1'd0, 2'd0, 2'd0, 1'd0};
 			{control_state, next_control_state} <= {RESET, RESET};
@@ -120,19 +120,19 @@ module hazard_control (
 	always @(*) begin
 		// flushed instruction
 		if (opcode == `OPCODE_FLUSH) begin
-			case (control_state)
-				RESET : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
-				ACCESS_I : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111; // stall IF, ID
-				ACCESS_D : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
-				HAZARD_STALL : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00011; // stall all
+			case (IDWrite
+				RESET : {PCWrite, IFWrite, EXWrite, IDWriteWrite, WBWrite} <= 5'b11111; // no stall
+				ACCESS_I : {PCWrite, IFWrite, IDWrite, MWrite, WBWrite} <= 5'b00111; // stall IF, ID
+				ACCESS_D : {PCWrite, IFWrite, EXWrite, IDWriterite, WBWrite} <= 5'b00000; // stall all
+				HAZARD_STALL : {PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b00011; // stall all
 			endcase
 
 
 
-			casex ({MState, IFState})
-				2'b0x : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
-				2'b10 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111; // stall PC
-				2'b11 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+			casex ({MState, IFStateIDWrite
+				2'b0x : {PCWrite, IFWrite, IDWrite, MWrite, WBWrite} <= 5'b00000; // stall all
+				2'b10 : {PCWrite, IFWrite, IDWrite, MWrite, WBWrite} <= 5'b00111; // stall PC
+				2'b11 : {PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
 			endcase
 			{isStall, btbWrite, btbSrc, flush, isPredict} <= {1'd0, 1'd0, 2'd0, 1'd0, 1'd0};
 		end
@@ -150,10 +150,10 @@ module hazard_control (
 			else forwardSrcB <= 2'd0; // $rt not dependent with any instruction
 			
 			// update stage write signals according to MState, IFState
-			casex ({MState, IFState})
-				2'b0x : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
-				2'b10 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111; // stall PC
-				2'b11 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+			casex ({MState, IFStateIDWrite
+				2'b0x : {PCWrite, IFWrite, IDWrite, MWrite, WBWrite} <= 5'b00000; // stall all
+				2'b10 : {PCWrite, IFWrite, IDWrite, MWrite, WBWrite} <= 5'b00111; // stall PC
+				2'b11 : {PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
 			endcase
 			{isStall, btbWrite, btbSrc, flush, isPredict} <= {1'd0, 1'd0, 2'd0, 1'd0, 1'd0};
 		end
@@ -172,8 +172,8 @@ module hazard_control (
 
 			// update stage write signals according to MState, IFState
 			casex ({MState, IFState})
-				2'b0x : begin
-					{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
+				2'b0x : IDWrite
+					{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
 					{btbWrite, btbSrc, flush} <= {1'd0, 2'd0, 1'd0};
 				end
 				2'b10 : begin
@@ -181,29 +181,29 @@ module hazard_control (
 					if (bcond) begin
 						{btbWrite, btbSrc} <= {1'd1, 2'd0};
 						if (predictedPC != brTarget) begin
-							flush <= 1'b1; // mispredict branch target -> flush
-							{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= (!IFState)? 5'b00000 : 5'b11111;
+							flush <= 1'b1; // IDWritect branch target -> flush
+							{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= (!IFState)? 5'b00000 : 5'b11111;
 						end
 						else begin
-							flush <= 1'b0; // mispredict branch target -> flush
-							{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111;
+							flush <= 1'b0; // IDWritect branch target -> flush
+							{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b00111;
 						end
 					end
 					else begin
 						{btbWrite, btbSrc} <= {1'd0, 2'd3};
 						if (predictedPC != nextPC) begin
-							flush <= 1'b1;
-							{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= (!IFState)? 5'b00000 : 5'b11111;
+							flush <= IDWrite
+							{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= (!IFState)? 5'b00000 : 5'b11111;
 						end
 						else begin
-							flush <= 1'b0;
-							{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111;
+							flush <= IDWrite
+							{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b00111;
 						end
 						flush <= (predictedPC != nextPC)? 1'd1 : 1'd0; // mispredict branch target -> flush 
 					end
 				end
-				2'b11 : begin
-					{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+				2'b11 : IDWrite
+					{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
 				end
 			endcase
 			{isStall, isPredict} <= {1'd0, 1'd1};
@@ -218,10 +218,10 @@ module hazard_control (
 			else forwardSrcA <= 2'd0; // $rs not dependent with any instruction
 
 			// update stage write signals according to MState, IFState
-			casex ({MState, IFState})
-				2'b0x : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
-				2'b10 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111; // stall PC
-				2'b11 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+			casex ({MState, IFStateIDWrite
+				2'b0x : {PCWrite, IFWrite, IDWrite, MWrite, WBWrite} <= 5'b00000; // stall all
+				2'b10 : {PCWrite, IFWrite, IDWrite, MWrite, WBWrite} <= 5'b00111; // stall PC
+				2'b11 : {PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
 			endcase
 			{isStall, btbWrite, btbSrc, flush, isPredict} <= {1'd0, 1'd0, 2'd0, 1'd0, 1'd0};
 		end
@@ -235,8 +235,8 @@ module hazard_control (
 			
 			// update stage write signals according to MState, IFState
 			casex ({MState, IFState})
-				2'b0x : begin
-					{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
+				2'b0x : IDWrite
+					{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
 					{btbWrite, btbSrc, flush} <= {1'd0, 2'd0, 1'd0};
 				end
 				2'b10 : begin
@@ -244,29 +244,29 @@ module hazard_control (
 					if (bcond) begin
 						{btbWrite, btbSrc} <= {1'd1, 2'd0};
 						if (predictedPC != brTarget) begin
-							flush <= 1'b1; // mispredict branch target -> flush
-							{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= (!IFState)? 5'b00000 : 5'b11111;
+							flush <= 1'b1; // IDWritect branch target -> flush
+							{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= (!IFState)? 5'b00000 : 5'b11111;
 						end
 						else begin
-							flush <= 1'b0; // mispredict branch target -> flush
-							{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111;
+							flush <= 1'b0; // IDWritect branch target -> flush
+							{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b00111;
 						end
 					end
 					else begin
 						{btbWrite, btbSrc} <= {1'd0, 2'd3};
 						if (predictedPC != nextPC) begin
-							flush <= 1'b1;
-							{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= (!IFState)? 5'b00000 : 5'b11111;
+							flush <= IDWrite
+							{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= (!IFState)? 5'b00000 : 5'b11111;
 						end
 						else begin
-							flush <= 1'b0;
-							{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111;
+							flush <= IDWrite
+							{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b00111;
 						end
 						flush <= (predictedPC != nextPC)? 1'd1 : 1'd0; // mispredict branch target -> flush 
 					end
 				end
-				2'b11 : begin
-					{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+				2'b11 : IDWrite
+					{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
 				end
 			endcase
 			{isStall, isPredict} <= {1'd0, 1'd1};
@@ -281,23 +281,23 @@ module hazard_control (
 
 			// update stage write signals according to MState, IFState
 			casex ({MState, IFState})
-				2'b0x : begin
-					{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
+				2'b0x : IDWrite
+					{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
 				end
 				2'b10 : begin 
 					{btbWrite, btbSrc} <= {1'd1, 2'd1};
 					if (predictedPC != jrTarget) begin
-						flush <= 1'd1;
-						{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= (!IFState)? 5'b00000 : 5'b11111;
+						flush <= IDWrite
+						{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= (!IFState)? 5'b00000 : 5'b11111;
 					end
 					else begin
-						flush <= 1'd0;
-						{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111;
+						flush <= IDWrite
+						{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b00111;
 					end
 				end
 				2'b11 : begin
-					{btbWrite, btbSrc} <= {1'd1, 2'd1};
-					{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+					{btbWrite, btbSrc} <= {IDWrite1, 2'd1};
+					{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
 				end
 			endcase
 			{isStall, isPredict} <= {1'd0, 1'd1};
@@ -307,23 +307,23 @@ module hazard_control (
 		else if (opcode == `OPCODE_JMP || opcode == `OPCODE_JAL) begin
 			// update stage write signals according to MState, IFState
 			casex ({MState, IFState})
-				2'b0x : begin
-					{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
+				2'b0x : IDWrite
+					{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
 				end
 				2'b10 : begin 
 					{btbWrite, btbSrc} <= {1'd1, 2'd2};
 					if (predictedPC != jumpAddr) begin
-						flush <= 1'b1;
-						{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= (!IFState)? 5'b00000 : 5'b11111;
+						flush <= IDWrite
+						{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= (!IFState)? 5'b00000 : 5'b11111;
 					end
 					else begin
-						flush <= 1'b0;
-						{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111;
+						flush <= IDWrite
+						{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b00111;
 					end
 				end
 				2'b11 : begin
-					{btbWrite, btbSrc} <= {1'd1, 2'd2};
-					{PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+					{btbWrite, btbSrc} <= {IDWrite1, 2'd2};
+					{PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
 				end
 			endcase
 			{isStall, isPredict} <= {1'd0, 1'd1};
@@ -331,20 +331,20 @@ module hazard_control (
 		// no dependency - LHI
 		else if (opcode == `OPCODE_LHI) begin
 			// update stage write signals according to MState, IFState
-			casex ({MState, IFState})
-				2'b0x : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
-				2'b10 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111; // stall PC
-				2'b11 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+			casex ({MState, IFStateIDWrite
+				2'b0x : {PCWrite, IFWrite, IDWrite, MWrite, WBWrite} <= 5'b00000; // stall all
+				2'b10 : {PCWrite, IFWrite, IDWrite, MWrite, WBWrite} <= 5'b00111; // stall PC
+				2'b11 : {PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
 			endcase
 			{isStall, btbWrite, btbSrc, flush, isPredict} <= {1'd0, 1'd0, 2'd0, 1'd0, 1'd0};
 		end
 		// no dependency - HLT
 		else begin 
 			// update stage write signals according to MState, IFState
-			casex ({MState, IFState})
-				2'b0x : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
-				2'b10 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111; // stall PC
-				2'b11 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+			casex ({MState, IFStateIDWrite
+				2'b0x : {PCWrite, IFWrite, IDWrite, MWrite, WBWrite} <= 5'b00000; // stall all
+				2'b10 : {PCWrite, IFWrite, IDWrite, MWrite, WBWrite} <= 5'b00111; // stall PC
+				2'b11 : {PCWrite, IFWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
 			endcase
 			{isStall, btbWrite, btbSrc, flush, isPredict} <= {1'd0, 1'd0, 2'd0, 1'd1, 1'd0}; // flush = 1
 		end

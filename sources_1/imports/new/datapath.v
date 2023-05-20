@@ -27,10 +27,10 @@ module datapath (
 
 	// input signal from hazard control unit
 	input PCWrite, // PCWrite enable signal
-	input IFWrite, // IF/ID update enable signal
-	input IDWrite, // ID/EX update enable signal
-	input EXWrite, // EX/MEM update enable signal
-	input MWrite, // MEM/WB update enable signal
+	input IDWrite, // IF/ID update enable signal
+	input EXWrite, // ID/EX update enable signal
+	input MWrite, // EX/MEM update enable signal
+	input WBWrite, // MEM/WB update enable signal
 	input [1:0] btbSrc, // select signal for BTB update value
 	input btbWrite, // BTB write enable signal
 	input flush, // flush signal to disenable all the control signal from EX.
@@ -273,16 +273,16 @@ module datapath (
 			if (PCWrite) PC_reg <= (flush)? pcTarget : selectedPC; // update PC only when previous state == 1
 			
 			// IF -> ID
-			if (IFWrite) begin
+			if (IDWrite) begin
 				{nextPC_reg, predictedPC_reg, originalPC_reg} <= {PC_add_1, selectedPC, PC};
 				inst_reg <= (flush)? `WORD_SIZE'he000 : i_data;
 			end
 			else begin
-				inst_reg <= (!MWrite)? inst_reg : `WORD_SIZE'he000;
+				inst_reg <= (!WBWrite)? inst_reg : `WORD_SIZE'he000;
 			end
 
-			// ID -> EX : update only when IDWrite == 1(not stall)
-			if (IDWrite) begin
+			// ID -> EX : update only when EXWrite == 1(not stall)
+			if (EXWrite) begin
 				// forwarding data to RF_A_reg, RF_B_reg according to forwardSrcA, forwardSrcB from hazard_control
 				{RF_A_reg, RF_B_reg, output_port_EX_reg} <= {RF_A_target, RF_B_target, RF_A_target};
 				{PC_EX_reg, sign_immediate_reg, LHI_immediate_reg, ORI_immediate_reg} <= {nextPC, sign_immediate, LHI_immediate, ORI_immediate};
@@ -292,15 +292,15 @@ module datapath (
 				{RF_A_reg, RF_B_reg, output_port_EX_reg} <= {RF_A_reg, RF_B_reg, output_port};
 			end
 
-			// EX -> MEM : update only when EXWrite == 1(not stall)	
+			// EX -> MEM : update only when MWrite == 1(not stall)	
 			MState <= ((opcode_EX == `OPCODE_LWD || opcode_EX == `OPCODE_SWD) && MState == 1'b1)? 1'b0 : 1'b1; // update MState
-			if (EXWrite) begin
+			if (MWrite) begin
 				{PC_M_reg, ALUOut_reg, swData_reg, destM_reg, output_port_M_reg, opcode_M_reg, func_code_M_reg}
 					<= {PC_EX_reg, ALUResult_main, RF_B_reg, destEX, output_port_EX_reg, opcode_EX_reg, func_code_EX_reg};
 			end
 
-			// MEM -> WB : update only when MWrite == 1(not stall)
-			if (MWrite) begin
+			// MEM -> WB : update only when WBWrite == 1(not stall)
+			if (WBWrite) begin
 				{PC_WB_reg, lwData_reg, wbData_reg, destWB_reg, output_port_WB_reg, opcode_WB_reg, func_code_WB_reg}
 					<= {PC_M_reg, d_data, ALUOut_reg, destM, output_port_M, opcode_M_reg, func_code_M_reg};
 			end
