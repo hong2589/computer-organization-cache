@@ -1,6 +1,7 @@
 `timescale 1ns/1ns										
 `define PERIOD1 100
 `define WORD_SIZE 16
+`define FETCH_SIZE 64
 
 `define NUM_TEST 58
 `define TESTID_SIZE 5
@@ -13,13 +14,13 @@ module cpu_TB();
 	wire i_readM;
 	wire i_writeM;
 	wire [`WORD_SIZE-1:0] i_address;
-	wire [`WORD_SIZE-1:0] i_data;		
+	wire [`FETCH_SIZE-1:0] i_data;		
 	
 	// Data memory interface
 	wire d_readM;
 	wire d_writeM;
 	wire [`WORD_SIZE-1:0] d_address;
-	wire [`WORD_SIZE-1:0] d_data;
+	wire [`FETCH_SIZE-1:0] d_data;
 
 	// for debuging purpose
 	wire [`WORD_SIZE-1:0] num_inst;		// number of instruction during execution

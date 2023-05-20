@@ -41,10 +41,16 @@ module Memory(
 	reg [`WORD_SIZE-1:0] memory [0:`MEMORY_SIZE-1];
 	reg [`FETCH_SIZE-1:0] i_outputData;
 	reg [`FETCH_SIZE-1:0] d_outputData;
+
+	wire [`WORD_SIZE-1:0] i_effective_address;
+	wire [`WORD_SIZE-1:0] d_effective_address;
 	
 	// fetch instruction & data
 	assign i_data = i_outputData;
 	assign d_data = d_outputData;
+
+	assign i_effective_address = {i_address[31:2], 2'b00}; // effective i_address
+	assign d_effective_address = {d_address[31:2], 2'b00}; // effective d_address
 
 	// update i_nextStateM, d_nextStateM
 	always @(*) begin
@@ -83,33 +89,27 @@ module Memory(
 		if(!reset_n) begin
 			// reset state of i_mem, d_mem
 			{i_stateM, d_stateM} <= {RESET, RESET};
-			
 		end
 		else begin
 			{i_stateM, d_stateM} <= {i_nextStateM, d_nextStateM}; // update current state(i_stateM, d_stateM)
 			if (d_stateM == STORE3) begin
-				{memory[d_address+3], memory[d_address+2], memory[d_address+1], memory[d_address]} <= d_data;
+				{memory[d_effective_address+3], memory[d_effective_address+2], memory[d_effective_address+1], memory[d_effective_address]} <= d_data;
 			end
 		end
 	end
 
-	// asynchronous
-	always @(*) begin
+	// outputData
+	always @(posedge clk, negedge reset_n) begin
 		if (!reset_n)begin
 			{i_outputData, d_outputData} <= {`FETCH_SIZE'dz, `FETCH_SIZE'dz};
 		end
 		else begin
 			// update i_outputData
-			if (i_stateM == FETCH3) begin
-				i_outputData <= {memory[i_address+3], memory[i_address+2], memory[i_address+1], memory[i_address]};
-			end 
+			if (i_stateM == FETCH2) i_outputData <= {memory[i_effective_address+3], memory[i_effective_address+2], memory[i_effective_address+1], memory[i_effective_address]};
 			else i_outputData <= `FETCH_SIZE'dz;
 
 			// update d_outputData
-			if (d_stateM == RESET) d_outputData <= `FETCH_SIZE'dz;
-			else if (d_stateM == FETCH3) begin
-				d_outputData <= {memory[d_address+3], memory[d_address+2], memory[d_address+1], memory[d_address]};
-			end
+			if (d_stateM == FETCH2) d_outputData <= {memory[d_effective_address+3], memory[d_effective_address+2], memory[d_effective_address+1], memory[d_effective_address]};
 			else d_outputData <= `FETCH_SIZE'dz;
 		end
 	end

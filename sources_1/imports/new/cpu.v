@@ -81,14 +81,11 @@ module cpu(
 	// cache - datapath interface
 	wire i_readC; wire i_writeC; wire [`WORD_SIZE-1:0] i_addressC; wire [`WORD_SIZE-1:0] i_dataC;
 	wire d_readC; wire d_writeC; wire [`WORD_SIZE-1:0] d_addressC; wire [`WORD_SIZE-1:0] d_dataC;
-	// cache - memory interface
-	wire i_readM; wire i_writeM; wire [`WORD_SIZE-1:0] i_addressM; wire [`FETCH_SIZE-1:0] i_dataM;
-	wire d_readM; wire d_writeM; wire [`WORD_SIZE-1:0] d_addressM; wire [`FETCH_SIZE-1:0] d_dataM; 
 	// cache hit indicator
 	wire i_cache_hit; wire d_cache_hit;
 	wire i_ready; wire d_ready;
 
-	assign {i_address, i_data, d_address, d_data} = {i_addressM, i_dataM, d_addressM, d_dataM};
+	// assign {i_address, i_data, d_address, d_data} = {i_addressM, i_dataM, d_addressM, d_dataM};
 
 	// In cpu module, three submodules interact each other - datapath, control_unit, and hazard_control.
 
@@ -238,12 +235,12 @@ module cpu(
 		.d_dataC(d_dataC),
 		.i_readM(i_readM),
 		.i_writeM(i_writeM),
-		.i_addressM(i_addressM),
-		.i_dataM(i_dataM),
+		.i_addressM(i_address),
+		.i_dataM(i_data),
 		.d_readM(d_readM),
 		.d_writeM(d_writeM),
-		.d_addressM(d_addressM),
-		.d_dataM(d_dataM),
+		.d_addressM(d_address),
+		.d_dataM(d_data),
 		.i_cache_hit(i_cache_hit),
 		.d_cache_hit(d_cache_hit),
 		.i_ready(i_ready),

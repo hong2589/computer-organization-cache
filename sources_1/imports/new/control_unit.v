@@ -92,7 +92,7 @@ module control_unit (
 		end
 		else begin
 			// the instruction in WB is not flushed(null) instruction && different with previous value -> add num_inst by 1
-			if (opcode_WB != `OPCODE_FLUSH && opcode_WB != previous_opcode_WB_reg) num_inst <= num_inst + `WORD_SIZE'd1;
+			if (opcode_WB != `OPCODE_FLUSH) num_inst <= num_inst + `WORD_SIZE'd1;
 			previous_opcode_WB_reg <= opcode_WB; // previous opcode_WB
 			is_halted <= is_halted_WB;
 		end

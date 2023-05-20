@@ -277,7 +277,8 @@ module datapath (
 				// forwarding data to RF_A_reg, RF_B_reg according to forwardSrcA, forwardSrcB from hazard_control
 				{RF_A_reg, RF_B_reg, output_port_EX_reg} <= {RF_A_target, RF_B_target, RF_A_target};
 				{PC_EX_reg, sign_immediate_reg, LHI_immediate_reg, ORI_immediate_reg} <= {nextPC, sign_immediate, LHI_immediate, ORI_immediate};
-				{rs_reg, rt_reg, rd_reg, opcode_EX_reg, func_code_EX_reg} <= {rs, rt, rd, opcode, func_code};
+				{rs_reg, rt_reg, rd_reg, func_code_EX_reg} <= {rs, rt, rd, func_code};
+				opcode_EX_reg <= (flush_EX)? `OPCODE_FLUSH : opcode;
 			end
 			else begin
 				{RF_A_reg, RF_B_reg, output_port_EX_reg} <= {RF_A_reg, RF_B_reg, output_port};
