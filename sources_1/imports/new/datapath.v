@@ -37,6 +37,7 @@ module datapath (
 	input [1:0] forwardSrcA, // signal to select forwardTargetA
 	input [1:0] forwardSrcB, // signal to select forwardTargetB
 	input isPredict, // when the instruction in ID stage is branch or jump -> isPredict=1
+	input flush_EX,
 
 	// output signal to be transferred to hazard control unit
 	output [1:0] rs, // rs address in ID stage
@@ -53,15 +54,8 @@ module datapath (
 	output [`WORD_SIZE-1:0] nextPC, // PC + 1
 	output [3:0] opcode_EX, // opcode in EX stage
 	output [3:0] opcode_M, // opcode in MEM stage
-	output [3:0] opcode_WB, // opcode in WB stage
-	output IFState, // I-memory access state in IF stage from datapath
-	output MState // D-memory access state in MEM stage from datapath
+	output [3:0] opcode_WB // opcode in WB stage
 );
-
-	// state for I-memory, D-memory access
-	reg IFState; // state for I-memory
-	reg MState; // state for D-memory
-
 	// output registers
 	reg [`WORD_SIZE-1:0] output_port;
 
@@ -247,7 +241,6 @@ module datapath (
 			// reset IF stage registers
 			{PC_reg, inst_reg, nextPC_reg, predictedPC_reg, originalPC_reg}
 				<= {`WORD_SIZE'd0, `WORD_SIZE'he000, `WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0};
-			IFState <= 1'd0;
 			
 			// reset ID stage registers
 			{PC_EX_reg, RF_A_reg, RF_B_reg, sign_immediate_reg, LHI_immediate_reg, ORI_immediate_reg, output_port_EX_reg}
@@ -262,14 +255,12 @@ module datapath (
 			// reset MEM stage registers
 			{PC_WB_reg, lwData_reg, wbData_reg, destWB_reg, output_port_WB_reg, opcode_WB_reg, func_code_WB_reg}
 				<= {`WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0, 2'd0, `WORD_SIZE'd0, `OPCODE_FLUSH, 6'd0};
-			MState <= 1'd1;
 
 			// reset output_port
 			output_port <= `WORD_SIZE'd0;
 		end
 		else begin
 			// PC
-			IFState <= (IFState || !MState)? 1'b0 : 1'b1; // update IFState
 			if (PCWrite) PC_reg <= (flush)? pcTarget : selectedPC; // update PC only when previous state == 1
 			
 			// IF -> ID
@@ -278,7 +269,7 @@ module datapath (
 				inst_reg <= (flush)? `WORD_SIZE'he000 : i_data;
 			end
 			else begin
-				inst_reg <= (!WBWrite)? inst_reg : `WORD_SIZE'he000;
+				inst_reg <= (flush)? `WORD_SIZE'he000 : inst_reg;
 			end
 
 			// ID -> EX : update only when EXWrite == 1(not stall)
@@ -290,10 +281,10 @@ module datapath (
 			end
 			else begin
 				{RF_A_reg, RF_B_reg, output_port_EX_reg} <= {RF_A_reg, RF_B_reg, output_port};
+				if (flush_EX) opcode_EX_reg <= `OPCODE_FLUSH; // if LWD_dependence hazard exists, replace opcode_EX with OPCODE_FLUSH
 			end
 
-			// EX -> MEM : update only when MWrite == 1(not stall)	
-			MState <= ((opcode_EX == `OPCODE_LWD || opcode_EX == `OPCODE_SWD) && MState == 1'b1)? 1'b0 : 1'b1; // update MState
+			// EX -> MEM : update only when MWrite == 1(not stall)
 			if (MWrite) begin
 				{PC_M_reg, ALUOut_reg, swData_reg, destM_reg, output_port_M_reg, opcode_M_reg, func_code_M_reg}
 					<= {PC_EX_reg, ALUResult_main, RF_B_reg, destEX, output_port_EX_reg, opcode_EX_reg, func_code_EX_reg};

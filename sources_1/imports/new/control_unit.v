@@ -6,11 +6,9 @@ module control_unit (
     input [3:0] opcode, // receive opcode from control_unit
     input [5:0] func_code, // receive func_code from control_unit
 	input bcond, // branch condition
-	input IDWrite, // ID/EX write enable signal
-	input EXWrite, // EX/MEM write enable signal
-	input MWrite, // MEM/WB write enable signal
-	input IFState, // I-memory access state in IF stage from datapath
-	input MState, // D-memory access state in MEM stage from datapath
+	input EXWrite, // ID/EX write enable signal
+	input MWrite, // EX/MEM write enable signal
+	input WBWrite, // MEM/WB write enable signal
 	input [3:0] opcode_M, // opcode in MEM stage
 	input [3:0] opcode_WB, // opcode in WB stage
 
@@ -109,9 +107,8 @@ module control_unit (
 			d_writeC <= 1'd0;
 		end
 		else begin
-			i_readC <= ~IFState;
-			if (opcode_M == `OPCODE_LWD) d_readC <= ~MState;
-			if (opcode_M == `OPCODE_SWD) d_writeC <= ~MState;
+			d_readC <= (opcode_M == `OPCODE_LWD)? 1'd1 : 1'd0;
+			d_writeC <= (opcode_M == `OPCODE_SWD)? 1'd1 : 1'd0;
 		end
 	end
 
@@ -128,8 +125,8 @@ module control_unit (
 				{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, RegWrite_EX, WBSrc_EX, is_halted_EX} 
 					<= {1'd0, 2'd0, `ALU_ID_A, 2'd1, 1'd0, 2'd1, 1'd0};				
 			end
-			// transfer control signals to EX stage only when IDWrite == 1
-			else if (IDWrite) begin
+			// transfer control signals to EX stage only when EXWrite == 1
+			else if (EXWrite) begin
 				case(opcode) 
 					// set control signals according to opcode, func_code
 					// ADD, SUB, AND, ORR, NOT, TCP, SHL, SHR, WWD, JPR, JRL, HLT
@@ -231,7 +228,7 @@ module control_unit (
 					end
 				endcase
 			end
-			else begin // IDWrite==0 -> maintain current ID/EX control signals
+			else begin // EXWrite==0 -> maintain current ID/EX control signals
 				{isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX} 
 					<= {isWWD_EX, RegDst_EX, ALUOp_EX, ALUSrcB_EX, WBSrc_EX, is_halted_EX};
 				RegWrite_EX <= RegWrite_EX;
@@ -245,10 +242,10 @@ module control_unit (
 			{RegWrite_M, WBSrc_M, is_halted_M, isWWD_M} <= {1'd0, 2'd1, 1'd0, 1'd0};
 		end
 		else begin
-			if (EXWrite) begin // transfer control signals from ID/EX latches
+			if (MWrite) begin // transfer control signals from ID/EX latches
 				{RegWrite_M, WBSrc_M, is_halted_M, isWWD_M} <= {RegWrite_EX, WBSrc_EX, is_halted_EX, isWWD_EX};
 			end
-			else begin // EXWrite==0 -> maintain current EX/M control signals
+			else begin // MWrite==0 -> maintain current EX/M control signals
 				{RegWrite_M, WBSrc_M, is_halted_M, isWWD_M} <= {RegWrite_M, WBSrc_M, is_halted_M, isWWD_M};
 			end
 		end
@@ -260,10 +257,10 @@ module control_unit (
 			{RegWrite_WB, WBSrc_WB, is_halted_WB, isWWD_WB} <= {1'd0, 2'd1, 1'd0, 1'd0};
 		end
 		else begin
-			if (MWrite) begin //transfer control signals from EX/MEM latches
+			if (WBWrite) begin //transfer control signals from EX/MEM latches
 				{RegWrite_WB, WBSrc_WB, is_halted_WB, isWWD_WB} <= {RegWrite_M, WBSrc_M, is_halted_M, isWWD_M};
 			end
-			else begin // MWrite==0 -> maintain current M/WB control signals
+			else begin // WBWrite==0 -> maintain current M/WB control signals
 				{RegWrite_WB, WBSrc_WB, is_halted_WB} <= {RegWrite_WB, WBSrc_WB, is_halted_WB};
 				isWWD_WB <= 1'b0;
 			end

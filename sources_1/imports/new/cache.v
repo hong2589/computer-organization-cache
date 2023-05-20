@@ -6,14 +6,12 @@ module cache(
 	input reset_n,
 
 	// interface between datapath and I-cache
-	input IFState, // IF state in datapath. 0: wait, 1: fetch
 	input i_readC, // read signal for i-mem
 	input i_writeC, // write signal for i-mem
 	input [`WORD_SIZE-1:0] i_addressC, // memory address to fetch instruction
 	output [`WORD_SIZE-1:0] i_dataC, // instruction data
 
 	// interface between datapath and D-cache
-	input MState,
 	input d_readC,
 	input d_writeC,
 	input [`WORD_SIZE-1:0] d_addressC,
@@ -79,6 +77,7 @@ module cache(
 	// interface between datapath and cache
 	reg [`WORD_SIZE-1:0] i_outputDataC;
 	reg [`WORD_SIZE-1:0] d_outputDataC;
+	reg i_ready; reg d_ready;
 
 	// interface with memory
 	reg [`FETCH_SIZE-1:0] i_outputDataM;
@@ -116,39 +115,43 @@ module cache(
 
 	// update i_nextState, d_nextState
 	always @(*) begin
-		// update i_nextState 
-		case(i_state)
-			RESET : begin
-				if (d_state == RESET && (d_readC || d_writeC) && (d_tagBank[d_idx] != d_tag || !d_valid[d_idx]) && d_dirty[d_idx]) i_nextState <= RESET; // D-cache hit -> maintatin RESET
-				else if (i_readC && (i_tagBank[i_idx] != i_tag || !i_valid[i_idx])) i_nextState <= READ_M0;
-				else i_nextState <= RESET;
-			end
-			READ_M0 : i_nextState <= READ_M1;
-			READ_M1 : i_nextState <= READ_M2;
-			READ_M2 : i_nextState <= READ_M3;
-			READ_M3 : i_nextState <= FETCH_READY;
-			FETCH_READY : i_nextState <= RESET;
-		endcase
-		// update d_nextState
-		case (d_state)
-			RESET : begin
-				if ((d_readC || d_writeC) && (d_tagBank[d_idx] != d_tag || !d_valid[d_idx]) && d_dirty[d_idx]) begin
-					d_nextState <= WRITE_M0;
-					if (i_state == RESET && i_readC && (i_tagBank[i_idx] != i_tag || !i_valid[i_idx])) 
-				else if (d_readC && (d_tagBank[d_idx] != d_tag || !d_valid[d_idx]) && !d_dirty[d_idx]) d_nextState <= READ_M0;
-				else d_nextState <= RESET;
-			end
-			WRITE_M0 : d_nextState <= WRITE_M1;
-			WRITE_M1 : d_nextState <= WRITE_M2;
-			WRITE_M2 : d_nextState <= WRITE_M3;
-			WRITE_M3 : d_nextState <= READ_M0;
-			READ_M0 : d_nextState <= READ_M1;
-			READ_M1 : d_nextState <= READ_M2;
-			READ_M2 : d_nextState <= READ_M3;
-			READ_M3 : d_nextState <= (d_readC)? FETCH_READY : WRITE_READY;
-			FETCH_READY : d_nextState <= RESET;
-			WRITE_READY : d_nextState <= RESET;
-		endcase
+		if (!reset_n) begin
+			i_nextState <= RESET;
+			d_nextState <= RESET;
+		end
+		else begin
+			// update i_nextState 
+			case(i_state)
+				RESET : begin
+					if (d_state == RESET && (d_readC || d_writeC) && (d_tagBank[d_idx] != d_tag || !d_valid[d_idx]) && d_dirty[d_idx]) i_nextState <= RESET; // D-cache hit -> maintatin RESET
+					else if (i_readC && (i_tagBank[i_idx] != i_tag || !i_valid[i_idx])) i_nextState <= READ_M0;
+					else i_nextState <= RESET;
+				end
+				READ_M0 : i_nextState <= READ_M1;
+				READ_M1 : i_nextState <= READ_M2;
+				READ_M2 : i_nextState <= READ_M3;
+				READ_M3 : i_nextState <= FETCH_READY;
+				FETCH_READY : i_nextState <= RESET;
+			endcase
+			// update d_nextState
+			case (d_state)
+				RESET : begin
+					if ((d_readC || d_writeC) && (d_tagBank[d_idx] != d_tag || !d_valid[d_idx]) && d_dirty[d_idx]) d_nextState <= WRITE_M0;
+					else if (d_readC && (d_tagBank[d_idx] != d_tag || !d_valid[d_idx]) && !d_dirty[d_idx]) d_nextState <= READ_M0;
+					else d_nextState <= RESET;
+				end
+				WRITE_M0 : d_nextState <= WRITE_M1;
+				WRITE_M1 : d_nextState <= WRITE_M2;
+				WRITE_M2 : d_nextState <= WRITE_M3;
+				WRITE_M3 : d_nextState <= READ_M0;
+				READ_M0 : d_nextState <= READ_M1;
+				READ_M1 : d_nextState <= READ_M2;
+				READ_M2 : d_nextState <= READ_M3;
+				READ_M3 : d_nextState <= (d_readC)? FETCH_READY : WRITE_READY;
+				FETCH_READY : d_nextState <= RESET;
+				WRITE_READY : d_nextState <= RESET;
+			endcase
+		end
 	end
 
 	// synchronous
@@ -159,19 +162,13 @@ module cache(
 				// reset I-cache, D-cache
 				{i_tagBank[i], i_valid[i], i_dirty[i], i_dataBank[i]} <= {12'd0, 1'd0, 1'd0, 64'd0};
 				{d_tagBank[i], d_valid[i], d_dirty[i], d_dataBank[i]} <= {12'd0, 1'd0, 1'd0, 64'd0};
-				// reset datapath, memory interface
-				{i_readM, i_writeM, d_readM, d_writeM} <= 4'd0;
-				{i_outputDataC, d_outputDataC, i_outputDataM, d_outputDataM} <= {`WORD_SIZE'dz, `WORD_SIZE'dz, `FETCH_SIZE'dz, `FETCH_SIZE'dz};
 			end
-			{i_cache_hit, d_cache_hit} <= 2'b11;
-			{i_ready, d_ready} <= 2'b00;
 			{i_state, d_state} <= {RESET, RESET}; // reset state
 			{i_accessCnt, d_accessCnt, i_hitCnt, d_hitCnt} <= {`WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0}; // reset counter
-			{next_i_accessCnt, next_d_accessCnt, next_i_hitCnt, next_d_hitCnt} <= {`WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0}; // reset next_counter
 		end
 		else begin
-			{i_accessCnt, i_hitCnt, d_accessCnt, d_hitCnt} <= {next_i_accessCnt, next_i_hitCnt, next_d_accessCnt, next_d_hitCnt};
 			{i_state, d_state} <= {i_nextState, d_nextState}; // update current state
+			{i_accessCnt, i_hitCnt, d_accessCnt, d_hitCnt} <= {next_i_accessCnt, next_i_hitCnt, next_d_accessCnt, next_d_hitCnt};
 			if (i_state == READ_M3) i_dataBank[i_idx] <= i_dataM; // update i_dataBank
 			if (d_state == READ_M3) d_dataBank[d_idx] <= d_dataM; // allocate cache block from D-memory
 			if (d_state == WRITE_READY) begin // write D-cache(SWD) & dirty = 1
@@ -188,107 +185,116 @@ module cache(
 
 	// asynchronous
 	always @(*) begin
-		case (i_state)
-			RESET : begin
-				{i_readM, i_writeM} <= 2'b00;
-				if (i_readC) begin
-					next_i_accessCnt <= i_accessCnt + `WORD_SIZE'd1;
-					// I-cache hit -> return i_dataC
-					if (i_tagBank[i_idx] == i_tag && i_valid[i_idx]) begin
-						i_cache_hit <= 1'd1; next_i_hitCnt <= i_hitCnt + `WORD_SIZE'd1;
-						case (i_blockOffset)
-							2'd0 : i_outputDataC <= i_dataBank[i_idx][7:0];
-							2'd1 : i_outputDataC <= i_dataBank[i_idx][15:8];
-							2'd2 : i_outputDataC <= i_dataBank[i_idx][23:16];
-							2'd3 : i_outputDataC <= i_dataBank[i_idx][31:24];  
-						endcase
+		if (!reset_n) begin
+			{i_cache_hit, d_cache_hit} <= 2'b11;
+			{i_readM, i_writeM, d_readM, d_writeM} <= 4'd0;
+			{i_ready, d_ready} <= 2'b00;
+			{next_i_accessCnt, next_d_accessCnt, next_i_hitCnt, next_d_hitCnt} <= {`WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0}; // reset next_counter
+			{i_outputDataC, d_outputDataC, i_outputDataM, d_outputDataM} <= {`WORD_SIZE'dz, `WORD_SIZE'dz, `FETCH_SIZE'dz, `FETCH_SIZE'dz};
+		end
+		else begin
+			case (i_state)
+				RESET : begin
+					{i_readM, i_writeM} <= 2'b00;
+					if (i_readC) begin
+						next_i_accessCnt <= i_accessCnt + `WORD_SIZE'd1;
+						// I-cache hit -> return i_dataC
+						if (i_tagBank[i_idx] == i_tag && i_valid[i_idx]) begin
+							i_cache_hit <= 1'd1; next_i_hitCnt <= i_hitCnt + `WORD_SIZE'd1;
+							case (i_blockOffset)
+								2'd0 : i_outputDataC <= i_dataBank[i_idx][7:0];
+								2'd1 : i_outputDataC <= i_dataBank[i_idx][15:8];
+								2'd2 : i_outputDataC <= i_dataBank[i_idx][23:16];
+								2'd3 : i_outputDataC <= i_dataBank[i_idx][31:24];  
+							endcase
+						end
+						else begin
+							i_cache_hit <= 1'd0;
+							i_outputDataC <= `WORD_SIZE'dz;
+						end
 					end
 					else begin
 						i_cache_hit <= 1'd0;
 						i_outputDataC <= `WORD_SIZE'dz;
 					end
 				end
-				else begin
-					i_cache_hit <= 1'd0;
-					i_outputDataC <= `WORD_SIZE'dz;
+				READ_M0 : i_readM <= 1'd1;
+				READ_M3 : i_ready <= 1'd1;
+				FETCH_READY : begin
+					i_ready <= 1'd0; i_cache_hit <= 1'd1;
+					case (i_blockOffset)
+						2'd0 : i_outputDataC <= i_dataBank[i_idx][7:0];
+						2'd1 : i_outputDataC <= i_dataBank[i_idx][15:8];
+						2'd2 : i_outputDataC <= i_dataBank[i_idx][23:16];
+						2'd3 : i_outputDataC <= i_dataBank[i_idx][31:24];  
+					endcase
 				end
-			end
-			READ_M0 : i_readM <= 1'd1;
-			READ_M3 : i_ready <= 1'd1;
-			FETCH_READY : begin
-				i_ready <= 1'd0; i_cache_hit <= 1'd1;
-				case (i_blockOffset)
-					2'd0 : i_outputDataC <= i_dataBank[i_idx][7:0];
-					2'd1 : i_outputDataC <= i_dataBank[i_idx][15:8];
-					2'd2 : i_outputDataC <= i_dataBank[i_idx][23:16];
-					2'd3 : i_outputDataC <= i_dataBank[i_idx][31:24];  
-				endcase
-			end
-		endcase
-		case (d_state)
-			RESET : begin
-				{d_readM, d_writeM} <= 2'b00;
-				if (d_readC) begin
-					next_d_accessCnt <= d_accessCnt + `WORD_SIZE'd1;
-					// D-cache hit -> return d_dataC
-					if (d_tagBank[d_idx] == d_tag && d_valid[d_idx]) begin
-						d_cache_hit <= 1'd1; next_d_hitCnt <= d_hitCnt + `WORD_SIZE'd1;
-						case (d_blockOffset)
-							2'd0 : d_outputDataC <= d_dataBank[d_idx][7:0];
-							2'd1 : d_outputDataC <= d_dataBank[d_idx][15:8];
-							2'd2 : d_outputDataC <= d_dataBank[d_idx][23:16];
-							2'd3 : d_outputDataC <= d_dataBank[d_idx][31:24];
-						endcase
+			endcase
+			case (d_state)
+				RESET : begin
+					{d_readM, d_writeM} <= 2'b00;
+					if (d_readC) begin
+						next_d_accessCnt <= d_accessCnt + `WORD_SIZE'd1;
+						// D-cache hit -> return d_dataC
+						if (d_tagBank[d_idx] == d_tag && d_valid[d_idx]) begin
+							d_cache_hit <= 1'd1; next_d_hitCnt <= d_hitCnt + `WORD_SIZE'd1;
+							case (d_blockOffset)
+								2'd0 : d_outputDataC <= d_dataBank[d_idx][7:0];
+								2'd1 : d_outputDataC <= d_dataBank[d_idx][15:8];
+								2'd2 : d_outputDataC <= d_dataBank[d_idx][23:16];
+								2'd3 : d_outputDataC <= d_dataBank[d_idx][31:24];
+							endcase
+						end
+						else begin
+							d_cache_hit <= 1'd0;
+							d_outputDataC <= `WORD_SIZE'dz;
+						end
+					end
+					else if (d_writeC) begin
+						next_d_accessCnt <= d_accessCnt + `WORD_SIZE'd1;
+						d_outputDataC <= `WORD_SIZE'dz;
+						// D-cache hit -> update d_dataBank, dirty = 1
+						if (d_tagBank[d_idx] == d_tag && d_valid[d_idx]) begin
+							case (d_blockOffset)
+								2'd0 : d_dataBank[d_idx][7:0] <= d_dataC;
+								2'd1 : d_dataBank[d_idx][15:8] <= d_dataC;
+								2'd2 : d_dataBank[d_idx][23:16] <= d_dataC;
+								2'd3 : d_dataBank[d_idx][31:24] <= d_dataC;
+							endcase
+							d_dirty[d_idx] <= 1'b1;
+							d_cache_hit <= 1'b1; next_d_hitCnt <= d_hitCnt + `WORD_SIZE'd1;
+						end
+						// D-cache miss
+						else begin
+							d_cache_hit <= 1'b0;
+						end
 					end
 					else begin
-						d_cache_hit <= 1'd0;
 						d_outputDataC <= `WORD_SIZE'dz;
 					end
 				end
-				else if (d_writeC) begin
-					next_d_accessCnt <= d_accessCnt + `WORD_SIZE'd1;
-					d_outputDataC <= `WORD_SIZE'dz;
-					// D-cache hit -> update d_dataBank, dirty = 1
-					if (d_tagBank[d_idx] == d_tag && d_valid[d_idx]) begin
-						case (d_blockOffset)
-							2'd0 : d_dataBank[d_idx][7:0] <= d_dataC;
-							2'd1 : d_dataBank[d_idx][15:8] <= d_dataC;
-							2'd2 : d_dataBank[d_idx][23:16] <= d_dataC;
-							2'd3 : d_dataBank[d_idx][31:24] <= d_dataC;
-						endcase
-						d_dirty[d_idx] <= 1'b1;
-						d_cache_hit <= 1'b1; next_d_hitCnt <= d_hitCnt + `WORD_SIZE'd1;
-					end
-					// D-cache miss
-					else begin
-						d_cache_hit <= 1'b0;
-					end
+				READ_M0 : begin
+					d_readM <= 1'd1;
+					d_outputDataM <= `FETCH_SIZE'dz;
 				end
-				else begin
-					d_outputDataC <= `WORD_SIZE'dz;
+				READ_M3 : d_ready <= 1'd1;
+				FETCH_READY : begin
+					d_ready <= 1'd0; d_cache_hit <= 1'd1;
+					// fetch data to datapath
+					case (d_blockOffset)
+						2'd0 : d_outputDataC <= d_dataBank[d_idx][7:0];
+						2'd1 : d_outputDataC <= d_dataBank[d_idx][15:8];
+						2'd2 : d_outputDataC <= d_dataBank[d_idx][23:16];
+						2'd3 : d_outputDataC <= d_dataBank[d_idx][31:24];
+					endcase
+				end 
+				WRITE_M0 : d_writeM <= 1'd1;
+				WRITE_M3 : d_outputDataM <= d_dataBank[d_idx]; // transfer data to memory
+				WRITE_READY : begin
+					d_ready <= 1'd0; d_cache_hit <= 1'd1;
 				end
-			end
-			READ_M0 : begin
-				d_readM <= 1'd1;
-				d_outputDataM <= `FETCH_SIZE'dz;
-			end
-			READ_M3 : d_ready <= 1'd1;
-			FETCH_READY : begin
-				d_ready <= 1'd0; d_cache_hit <= 1'd1;
-				// fetch data to datapath
-				case (d_blockOffset)
-					2'd0 : d_outputDataC <= d_dataBank[d_idx][7:0];
-					2'd1 : d_outputDataC <= d_dataBank[d_idx][15:8];
-					2'd2 : d_outputDataC <= d_dataBank[d_idx][23:16];
-					2'd3 : d_outputDataC <= d_dataBank[d_idx][31:24];
-				endcase
-			end 
-			WRITE_M0 : d_writeM <= 1'd1;
-			WRITE_M3 : d_outputDataM <= d_dataBank[d_idx]; // transfer data to memory
-			WRITE_READY : begin
-				d_ready <= 1'd0; d_cache_hit <= 1'd1;
-			end
-		endcase
+			endcase
+		end
 	end
 
 

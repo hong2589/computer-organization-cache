@@ -48,28 +48,34 @@ module Memory(
 
 	// update i_nextStateM, d_nextStateM
 	always @(*) begin
-		case (i_stateM)
-			RESET : i_nextStateM <= (i_readM)? FETCH0 : RESET;
-			FETCH0 : i_nextStateM <= FETCH1;
-			FETCH1 : i_nextStateM <= FETCH2;
-			FETCH2 : i_nextStateM <= FETCH3;
-			FETCH3 : i_nextStateM <= RESET;
-		endcase
-		case (d_stateM)
-			RESET : begin
-				if (d_readM) d_nextStateM <= FETCH0;
-				else if (d_writeM) d_nextStateM <= STORE0;
-				else d_nextStateM <= RESET;
-			end
-			FETCH0 : d_nextStateM <= FETCH1;
-			FETCH1 : d_nextStateM <= FETCH2;
-			FETCH2 : d_nextStateM <= FETCH3;
-			FETCH3 : d_nextStateM <= RESET;
-			STORE0 : d_nextStateM <= STORE1;
-			STORE1 : d_nextStateM <= STORE2;
-			STORE2 : d_nextStateM <= STORE3;
-			STORE3 : d_nextStateM <= RESET;
-		endcase
+		if (!reset_n) begin
+			i_nextStateM <= RESET;
+			d_nextStateM <= RESET;
+		end
+		else begin
+			case (i_stateM)
+				RESET : i_nextStateM <= (i_readM)? FETCH0 : RESET;
+				FETCH0 : i_nextStateM <= FETCH1;
+				FETCH1 : i_nextStateM <= FETCH2;
+				FETCH2 : i_nextStateM <= FETCH3;
+				FETCH3 : i_nextStateM <= RESET;
+			endcase
+			case (d_stateM)
+				RESET : begin
+					if (d_readM) d_nextStateM <= FETCH0;
+					else if (d_writeM) d_nextStateM <= STORE0;
+					else d_nextStateM <= RESET;
+				end
+				FETCH0 : d_nextStateM <= FETCH1;
+				FETCH1 : d_nextStateM <= FETCH2;
+				FETCH2 : d_nextStateM <= FETCH3;
+				FETCH3 : d_nextStateM <= RESET;
+				STORE0 : d_nextStateM <= STORE1;
+				STORE1 : d_nextStateM <= STORE2;
+				STORE2 : d_nextStateM <= STORE3;
+				STORE3 : d_nextStateM <= RESET;
+			endcase
+		end
 	end
 
 	// synchronous
@@ -77,7 +83,7 @@ module Memory(
 		if(!reset_n) begin
 			// reset state of i_mem, d_mem
 			{i_stateM, d_stateM} <= {RESET, RESET};
-			{i_outputData, d_outputData} <= {`FETCH_SIZE'dz, `FETCH_SIZE'dz};
+			
 		end
 		else begin
 			{i_stateM, d_stateM} <= {i_nextStateM, d_nextStateM}; // update current state(i_stateM, d_stateM)
@@ -89,18 +95,23 @@ module Memory(
 
 	// asynchronous
 	always @(*) begin
-		// update i_outputData
-		if (i_stateM == FETCH3) begin
-			i_outputData <= {memory[i_address+3], memory[i_address+2], memory[i_address+1], memory[i_address]};
-		end 
-		else i_outputData <= `FETCH_SIZE'dz;
-
-		// update d_outputData
-		if (d_stateM == RESET) d_outputData <= `FETCH_SIZE'dz;
-		else if (d_stateM == FETCH3) begin
-			d_outputData <= {memory[d_address+3], memory[d_address+2], memory[d_address+1], memory[d_address]};
+		if (!reset_n)begin
+			{i_outputData, d_outputData} <= {`FETCH_SIZE'dz, `FETCH_SIZE'dz};
 		end
-		else d_outputData <= `FETCH_SIZE'dz;
+		else begin
+			// update i_outputData
+			if (i_stateM == FETCH3) begin
+				i_outputData <= {memory[i_address+3], memory[i_address+2], memory[i_address+1], memory[i_address]};
+			end 
+			else i_outputData <= `FETCH_SIZE'dz;
+
+			// update d_outputData
+			if (d_stateM == RESET) d_outputData <= `FETCH_SIZE'dz;
+			else if (d_stateM == FETCH3) begin
+				d_outputData <= {memory[d_address+3], memory[d_address+2], memory[d_address+1], memory[d_address]};
+			end
+			else d_outputData <= `FETCH_SIZE'dz;
+		end
 	end
 	
 	// reset memory

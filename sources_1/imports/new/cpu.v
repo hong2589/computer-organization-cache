@@ -54,6 +54,7 @@ module cpu(
 	wire [1:0] btbSrc; // select signal for address to update BTB. 0: brTarget, 1: rfData_1, 2: jumpAddr
 	wire btbWrite; // BTB write enable signal
 	wire flush; // flush signal to disenable all the control signal from EX
+	wire flush_EX; 
 	wire isPredict; // when the instruction in ID stage is branch or jump -> isPredict=1
 
 	// Select signal for forwarding 
@@ -76,10 +77,6 @@ module cpu(
 	wire [3:0] opcode_EX; // opcode of the instruction in EX stage
 	wire [3:0] opcode_M;
 	wire [3:0] opcode_WB;
-
-	// memory state
-	wire IFState;
-	wire MState;
 
 	// cache - datapath interface
 	wire i_readC; wire i_writeC; wire [`WORD_SIZE-1:0] i_addressC; wire [`WORD_SIZE-1:0] i_dataC;
@@ -130,6 +127,7 @@ module cpu(
 		.forwardSrcA(forwardSrcA),
 		.forwardSrcB(forwardSrcB),
 		.isPredict(isPredict),
+		.flush_EX(flush_EX),
 		.rs(rs),
 		.rt(rt), 
 		.destEX(destEX), 
@@ -144,9 +142,7 @@ module cpu(
 		.nextPC(nextPC),
 		.opcode_EX(opcode_EX),
 		.opcode_M(opcode_M),
-		.opcode_WB(opcode_WB),
-		.IFState(IFState),
-		.MState(MState)
+		.opcode_WB(opcode_WB)
 	);
 
 	// 2. control_unit : manage all the control signals used in datapath, control_hazard modules
@@ -163,8 +159,6 @@ module cpu(
 		.EXWrite(EXWrite),
 		.MWrite(MWrite),
 		.WBWrite(WBWrite),
-		.IFState(IFState),
-		.MState(MState),
 		.opcode_M(opcode_M),
 		.opcode_WB(opcode_WB),
 		.num_inst(num_inst),
@@ -197,8 +191,6 @@ module cpu(
 		.opcode_M(opcode_M),
 		.opcode_WB(opcode_WB),
 		.func_code(func_code),
-		.IFState(IFState),
-		.MState(MState),
 		.brTarget(brTarget),
 		.jrTarget(jrTarget),
 		.jumpAddr(jumpAddr),
@@ -208,6 +200,8 @@ module cpu(
 		.is_halted(is_halted),
 		.i_cache_hit(i_cache_hit),
 		.d_cache_hit(d_cache_hit),
+		.i_ready(i_ready),
+		.d_ready(d_ready),
 		.destEX(destEX),
 		.destM(destM),
 		.destWB(destWB),
@@ -224,7 +218,8 @@ module cpu(
 		.flush(flush),
 		.isPredict(isPredict),
 		.forwardSrcA(forwardSrcA),
-		.forwardSrcB(forwardSrcB)
+		.forwardSrcB(forwardSrcB),
+		.flush_EX(flush_EX)
 	);
 
 	// 4. cache : datapath accesses cache instead of accessing memory directly.
@@ -233,12 +228,10 @@ module cpu(
 	cache cache(
 		.clk(Clk),
 		.reset_n(Reset_N),
-		.IFState(IFState),
 		.i_readC(i_readC),
 		.i_writeC(i_writeC),
 		.i_addressC(i_addressC),
 		.i_dataC(i_dataC),
-		.MState(MState),
 		.d_readC(d_readC),
 		.d_writeC(d_writeC),
 		.d_addressC(d_addressC),
