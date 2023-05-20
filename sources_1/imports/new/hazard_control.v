@@ -72,6 +72,7 @@ module hazard_control (
 	parameter ACCESS_D = 3'd2;
 	parameter HAZARD_STALL = 3'd3;
 	parameter BOTH_I_D = 3'd4;
+	parameter BOTH_D_I = 3'd5;
 	reg [2:0] control_state;
 	reg [2:0] next_control_state;
 
@@ -97,7 +98,7 @@ module hazard_control (
 						 (rt_dependence_WB && use_rt_ID)? 2'd3 : 2'd0;
 
 	// transfer the hazard_control state to cache
-	assign both_access = (control_state == BOTH_I_D);
+	assign both_access = (control_state == BOTH_I_D || control_state == BOTH_D_I);
 
 	// update next_control_state
 	always @(*) begin
@@ -116,9 +117,14 @@ module hazard_control (
 					else if (i_ready) next_control_state <= RESET;
 					else next_control_state <= ACCESS_I;
 				end
-				ACCESS_D : next_control_state <= (i_ready && d_ready)? RESET : ACCESS_D;
+				ACCESS_D : begin
+					if (!i_cache_hit) next_control_state <= BOTH_D_I;
+					else if (d_ready) next_control_state <= RESET;
+					else next_control_state <= ACCESS_D;
+				end
 				HAZARD_STALL : next_control_state <= RESET;
 				BOTH_I_D : next_control_state <= (i_ready && d_ready)? RESET : BOTH_I_D;
+				BOTH_D_I : next_control_state <= (i_ready && d_ready)? RESET : BOTH_D_I;
 			endcase
 		end
 	end
@@ -188,7 +194,7 @@ module hazard_control (
 				end
 				ACCESS_I : begin
 					if (!d_cache_hit) begin
-						flush <= 1'd0; flush_EX <= 1'd0;
+						flush <= 1'd0; flush_EX <= 1'd1;
 						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
 					end
 					else if (i_ready) begin
@@ -224,7 +230,11 @@ module hazard_control (
 					end
 				end
 				ACCESS_D : begin 
-					if (d_ready) begin
+					if (!i_cache_hit) begin
+						flush <= 1'd0; flush_EX <= 1'd0;
+						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
+					end
+					else if (d_ready) begin
 						flush_EX <= 1'd0;
 						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
 						if (opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ) begin
@@ -285,6 +295,39 @@ module hazard_control (
 				BOTH_I_D : begin
 					if (i_ready && d_ready) begin
 						flush_EX <= 1'd1;
+						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
+						if (opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ) begin
+							isPredict <= 1'd1;
+							if (bcond) begin
+								{btbWrite, btbSrc} <= {1'd1, 2'd0};
+								flush <= (predictedPC != brTarget)? 1'd1 : 1'd0;
+							end
+							else begin
+								{btbWrite, btbSrc} <= {1'd0, 2'd3};
+								flush <= (predictedPC != nextPC)? 1'd1 : 1'd0;
+							end
+						end
+						else if (opcode == `OPCODE_RTYPE && (func_code == `FUNC_JPR || func_code == `FUNC_JRL)) begin
+							{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd1, 1'd1};
+							flush <= (predictedPC != jrTarget)? 1'd1 : 1'd0;
+						end
+						else if (opcode == `OPCODE_JMP || opcode == `OPCODE_JAL) begin
+							{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd2, 1'd1};
+							flush <= (predictedPC != jumpAddr)? 1'd1 : 1'd0;
+						end
+						else begin
+							{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
+							flush <= 1'd0;
+						end
+					end
+					else begin
+						flush <= 1'd0; flush_EX <= 1'd0;
+						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
+					end
+				end
+				BOTH_D_I : begin
+					if (i_ready && d_ready) begin
+						flush_EX <= 1'd0;
 						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
 						if (opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ) begin
 							isPredict <= 1'd1;
