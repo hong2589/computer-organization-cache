@@ -75,16 +75,35 @@ module hazard_control (
 	reg [1:0] control_state;
 	reg [1:0] next_control_state;
 
+	// LWD hazard indicator
+	wire rs_dependence_EX; wire rs_dependence_M; wire rs_dependence_WB; // indicate whether there is data dependence on rs register
+	wire rt_dependence_EX; wire rt_dependence_M; wire rt_dependence_WB; // indicate whether there is data dependence on rt register
+	wire use_rs_ID; wire use_rt_ID; // indicate whether the instruction in ID stage uses rs or rt register.
+	wire LWD_hazard; // indicate the stall case : LWD in EX stage and data dependence exists with the instruction in ID stage
+	assign {rs_dependence_EX, rs_dependence_M, rs_dependence_WB} = {(rs == destEX & RegWrite_EX), (rs == destM & RegWrite_M), (rs == destWB & RegWrite_WB)};
+	assign {rt_dependence_EX, rt_dependence_M, rt_dependence_WB} = {(rt == destEX & RegWrite_EX), (rt == destM & RegWrite_M), (rt == destWB & RegWrite_WB)};
+	assign use_rs_ID = (opcode == `OPCODE_RTYPE && func_code != `FUNC_HLT) || opcode == `OPCODE_SWD || opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ;
+	assign use_rt_ID = (opcode == `OPCODE_RTYPE && (func_code == `FUNC_ADD || func_code == `FUNC_SUB || func_code == `FUNC_AND || func_code == `FUNC_ORR))
+						|| opcode == `OPCODE_SWD || opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ;
+	assign LWD_dependence_hazard = (opcode_EX == `OPCODE_LWD) && ((use_rs_ID && rs_dependence_EX) || (use_rt_ID && rt_dependence_EX));
+
 	// update next_control_state
 	always @(*) begin
 		case(control_state)
-			RESET : 
+			RESET : begin
+				casex ({d_cache_hit, i_cache_hit})
+					2'b0x : next_control_state <= ACCESS_D;
+					2'b10 : next_control_state <= ACCESS_I;
+					2'b11 : next_control_state <= (LWD_dependence_hazard)? HAZARD_STALL : RESET;
+				endcase
+			end
 			ACCESS_I : next_control_state <= (i_ready)? RESET : ACCESS_I;
 			ACCESS_D : next_control_state <= (d_ready)? RESET : ACCESS_D;
-			HAZARD_STALL : 
+			HAZARD_STALL : next_control_state <= RESET;
 		endcase
 	end
 
+	// update synchronously
 	always @(posedge clk, negedge reset_n) begin
 		if (!reset_n) begin
 			{PCWrite , IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // turn on all the write signals
@@ -93,15 +112,23 @@ module hazard_control (
 			{control_state, next_control_state} <= {RESET, RESET};
 		end
 		else begin
-			control_state <= next_control_state;
+			control_state <= next_control_state; // update current control_state
 		end
 	end
 
-
-	// Control data, control hazard
+	// update signal asynchronously
 	always @(*) begin
 		// flushed instruction
 		if (opcode == `OPCODE_FLUSH) begin
+			case (control_state)
+				RESET : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b11111; // no stall
+				ACCESS_I : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111; // stall IF, ID
+				ACCESS_D : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
+				HAZARD_STALL : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00011; // stall all
+			endcase
+
+
+
 			casex ({MState, IFState})
 				2'b0x : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00000; // stall all
 				2'b10 : {PCWrite, IFWrite, IDWrite, EXWrite, MWrite} <= 5'b00111; // stall PC
