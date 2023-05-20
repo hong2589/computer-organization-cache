@@ -140,7 +140,7 @@ module cache(
 			case (d_state)
 				RESET : begin
 					if ((d_readC || d_writeC) && (d_tagBank[d_idx] != d_tag || !d_valid[d_idx]) && d_dirty[d_idx]) d_nextState <= WRITE_M0;
-					else if (d_readC && (d_tagBank[d_idx] != d_tag || !d_valid[d_idx]) && !d_dirty[d_idx]) d_nextState <= READ_M0;
+					else if ((d_readC || d_writeC) && (d_tagBank[d_idx] != d_tag || !d_valid[d_idx]) && !d_dirty[d_idx]) d_nextState <= READ_M0;
 					else d_nextState <= RESET;
 				end
 				WRITE_M0 : d_nextState <= WRITE_M1;
@@ -178,18 +178,19 @@ module cache(
 				i_tagBank[i_idx] <= i_addressC[15:4];
 				i_valid[i_idx] <= 1'd1;
 			end
+
 			if (d_state == READ_M3) begin
 				// update d_dataBank, d_tagBank, d_valid from D-memory
 				d_dataBank[d_idx] <= d_dataM; 
 				d_tagBank[d_idx] <= d_addressC[15:4];
 				d_valid[d_idx] <= 1'd1;
 			end
-			if (d_state == WRITE_READY) begin // write D-cache(SWD) & dirty = 1
+			else if (d_state == WRITE_READY) begin // write D-cache(SWD) & dirty = 1
 				case (d_blockOffset)
-					2'd0 : d_dataBank[d_idx][7:0] <= d_dataC;
-					2'd1 : d_dataBank[d_idx][15:8] <= d_dataC;
-					2'd2 : d_dataBank[d_idx][23:16] <= d_dataC;
-					2'd3 : d_dataBank[d_idx][31:24] <= d_dataC;
+					2'd0 : d_dataBank[d_idx][15:0] <= d_dataC;
+					2'd1 : d_dataBank[d_idx][31:16] <= d_dataC;
+					2'd2 : d_dataBank[d_idx][47:32] <= d_dataC;
+					2'd3 : d_dataBank[d_idx][63:48] <= d_dataC;
 				endcase
 				d_dirty[d_idx] <= 1'd1;
 			end
@@ -270,10 +271,10 @@ module cache(
 						// D-cache hit -> update d_dataBank, dirty = 1
 						if (d_tagBank[d_idx] == d_tag && d_valid[d_idx]) begin
 							case (d_blockOffset)
-								2'd0 : d_dataBank[d_idx][7:0] <= d_dataC;
-								2'd1 : d_dataBank[d_idx][15:8] <= d_dataC;
-								2'd2 : d_dataBank[d_idx][23:16] <= d_dataC;
-								2'd3 : d_dataBank[d_idx][31:24] <= d_dataC;
+								2'd0 : d_dataBank[d_idx][15:0] <= d_dataC;
+								2'd1 : d_dataBank[d_idx][31:16] <= d_dataC;
+								2'd2 : d_dataBank[d_idx][47:32] <= d_dataC;
+								2'd3 : d_dataBank[d_idx][63:48] <= d_dataC;
 							endcase
 							d_dirty[d_idx] <= 1'b1;
 							d_cache_hit <= 1'b1; next_d_hitCnt <= d_hitCnt + `WORD_SIZE'd1;
