@@ -75,41 +75,31 @@ module Memory(
 				FETCH0 : d_nextStateM <= FETCH1;
 				FETCH1 : d_nextStateM <= FETCH2;
 				FETCH2 : d_nextStateM <= FETCH3;
-				FETCH3 : d_nextStateM <= RESET;
+				FETCH3 : d_nextStateM <= (d_writeM)? STORE0 : RESET;
 				STORE0 : d_nextStateM <= STORE1;
 				STORE1 : d_nextStateM <= STORE2;
 				STORE2 : d_nextStateM <= STORE3;
-				STORE3 : d_nextStateM <= RESET;
+				STORE3 : d_nextStateM <= (d_readM)? FETCH0 : RESET;
 			endcase
 		end
 	end
 
-	// synchronous
-	always @(posedge clk, negedge reset_n) begin
-		if(!reset_n) begin
-			// reset state of i_mem, d_mem
-			{i_stateM, d_stateM} <= {RESET, RESET};
-		end
-		else begin
-			{i_stateM, d_stateM} <= {i_nextStateM, d_nextStateM}; // update current state(i_stateM, d_stateM)
-			if (d_stateM == STORE3) begin
-				{memory[d_effective_address+3], memory[d_effective_address+2], memory[d_effective_address+1], memory[d_effective_address]} <= d_data;
-			end
-		end
-	end
-
-	// outputData
+	// outputData, update current state
 	always @(posedge clk, negedge reset_n) begin
 		if (!reset_n)begin
+			{i_stateM, d_stateM} <= {RESET, RESET}; // reset current i_stateM, d_stateM
 			{i_outputData, d_outputData} <= {`FETCH_SIZE'dz, `FETCH_SIZE'dz};
 		end
 		else begin
+			{i_stateM, d_stateM} <= {i_nextStateM, d_nextStateM}; // update current state(i_stateM, d_stateM)
+
 			// update i_outputData
 			if (i_stateM == FETCH2) i_outputData <= {memory[i_effective_address+3], memory[i_effective_address+2], memory[i_effective_address+1], memory[i_effective_address]};
 			else i_outputData <= `FETCH_SIZE'dz;
 
 			// update d_outputData
 			if (d_stateM == FETCH2) d_outputData <= {memory[d_effective_address+3], memory[d_effective_address+2], memory[d_effective_address+1], memory[d_effective_address]};
+			else if (d_stateM == STORE2) {memory[d_effective_address+3], memory[d_effective_address+2], memory[d_effective_address+1], memory[d_effective_address]} <= d_data;
 			else d_outputData <= `FETCH_SIZE'dz;
 		end
 	end

@@ -237,7 +237,7 @@ module cache(
 						end
 					end
 					else begin
-						i_cache_hit <= 1'd0;
+						i_cache_hit <= 1'd1;
 						i_outputDataC <= `WORD_SIZE'dz;
 					end
 				end
@@ -288,14 +288,18 @@ module cache(
 					end
 					else begin
 						d_outputDataC <= `WORD_SIZE'dz;
+						d_cache_hit <= 1'd1;
 					end
 				end
 				READ_M0 : begin
 					d_readM <= 1'd1;
 					d_outputDataM <= `FETCH_SIZE'dz;
 				end
+				READ_M3 : begin
+					d_readM <= 1'd0;
+				end
 				FETCH_READY : begin
-					d_ready <= 1'd1; d_cache_hit <= 1'd1;
+					d_ready <= 1'd1; // d_cache_hit <= 1'd1;
 					// fetch data to datapath
 					case (d_blockOffset)
 						2'd0 : d_outputDataC <= d_dataBank[d_idx][15:0];
@@ -305,9 +309,12 @@ module cache(
 					endcase
 				end 
 				WRITE_M0 : d_writeM <= 1'd1;
-				WRITE_M3 : d_outputDataM <= d_dataBank[d_idx]; // transfer data to memory
+				WRITE_M3 : begin
+					d_outputDataM <= d_dataBank[d_idx]; // transfer data to memory
+					d_writeM <= 1'd0;
+				end
 				WRITE_READY : begin
-					d_ready <= 1'd1; d_cache_hit <= 1'd1;
+					d_ready <= 1'd1; // d_cache_hit <= 1'd1;
 				end
 			endcase
 		end
