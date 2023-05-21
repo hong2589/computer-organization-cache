@@ -106,11 +106,14 @@ module hazard_control (
 		else begin
 			case(control_state)
 				RESET : begin
-					casex ({d_cache_hit, i_cache_hit})
-						2'b0x : next_control_state <= ACCESS_D;
-						2'b10 : next_control_state <= ACCESS_I;
-						2'b11 : next_control_state <= (LWD_dependence_hazard)? HAZARD_STALL : RESET;
-					endcase
+					if (LWD_dependence_hazard) next_control_state <= HAZARD_STALL;
+					else begin
+						casex ({d_cache_hit, i_cache_hit})
+							2'b0x : next_control_state <= ACCESS_D;
+							2'b10 : next_control_state <= (LWD_dependence_hazard)? HAZARD_STALL : ACCESS_I;
+							2'b11 : next_control_state <= (LWD_dependence_hazard)? HAZARD_STALL : RESET;
+						endcase
+					end
 				end
 				ACCESS_I : begin
 					if (!d_cache_hit) next_control_state <= BOTH_I_D;
@@ -160,10 +163,17 @@ module hazard_control (
 								{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
 							end
 							2'b10 : begin
-								// next_control_state <= ACCESS_I;
-								flush <= 1'd0; flush_EX <= 1'd0;
-								{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00111; // stall IF, ID
-								{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
+								if (LWD_dependence_hazard) begin
+									flush <= 1'd0; flush_EX <= 1'd1; // flush_EX = 1
+									{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00011; // stall IF, ID, EX
+									{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
+								end
+								else begin
+									// next_control_state <= ACCESS_I;
+									flush <= 1'd0; flush_EX <= 1'd0;
+									{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00111; // stall IF, ID
+									{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
+								end
 							end
 							2'b11 : begin
 								// next_control_state <= (LWD_dependence_hazard)? HAZARD_STALL : RESET;
