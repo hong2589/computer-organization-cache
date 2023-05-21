@@ -143,238 +143,245 @@ module hazard_control (
 			isPredict <= 1'd0;
 		end
 		else begin
-			// operate according to control_state
-			case (control_state)
-				RESET : begin
-					casex ({d_cache_hit, i_cache_hit})
-						2'b0x : begin
-							// next_control_state <= ACCESS_D;
+			if (opcode == `OPCODE_RTYPE && func_code == `FUNC_HLT) begin
+				flush <= 1'd0; flush_EX <= 1'd0;
+				{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00111; // stall IF, ID
+				{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
+			end
+			else begin
+				// operate according to control_state
+				case (control_state)
+					RESET : begin
+						casex ({d_cache_hit, i_cache_hit})
+							2'b0x : begin
+								// next_control_state <= ACCESS_D;
+								flush <= 1'd0; flush_EX <= 1'd0;
+								{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
+								{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
+							end
+							2'b10 : begin
+								// next_control_state <= ACCESS_I;
+								flush <= 1'd0; flush_EX <= 1'd0;
+								{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00111; // stall IF, ID
+								{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
+							end
+							2'b11 : begin
+								// next_control_state <= (LWD_dependence_hazard)? HAZARD_STALL : RESET;
+								if (LWD_dependence_hazard) begin
+									flush <= 1'd0; flush_EX <= 1'd1; // flush_EX = 1
+									{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00011; // stall IF, ID, EX
+									{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
+								end
+								else begin
+									flush_EX <= 1'd0;
+									{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
+									if (opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ) begin
+										isPredict <= 1'd1;
+										if (bcond) begin
+											{btbWrite, btbSrc} <= {1'd1, 2'd0};
+											flush <= (predictedPC != brTarget)? 1'd1 : 1'd0;
+										end
+										else begin
+											{btbWrite, btbSrc} <= {1'd0, 2'd3};
+											flush <= (predictedPC != nextPC)? 1'd1 : 1'd0;
+										end
+									end
+									else if (opcode == `OPCODE_RTYPE && (func_code == `FUNC_JPR || func_code == `FUNC_JRL)) begin
+										{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd1, 1'd1};
+										flush <= (predictedPC != jrTarget)? 1'd1 : 1'd0;
+									end
+									else if (opcode == `OPCODE_JMP || opcode == `OPCODE_JAL) begin
+										{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd2, 1'd1};
+										flush <= (predictedPC != jumpAddr)? 1'd1 : 1'd0;
+									end
+									else begin
+										{btbWrite, btbSrc, flush, isPredict} <= {1'd0, 2'd0, 1'd0, 1'd0};
+									end
+								end
+							end
+						endcase
+					end
+					ACCESS_I : begin
+						if (!d_cache_hit) begin
+							flush <= 1'd0; flush_EX <= 1'd1;
+							{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
+							{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
+						end
+						else if (i_ready) begin
+							flush_EX <= 1'd1; // flush_EX <= 1'd1
+							{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
+							if (opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ) begin
+								isPredict <= 1'd1;
+								if (bcond) begin
+									{btbWrite, btbSrc} <= {1'd1, 2'd0};
+									flush <= (predictedPC != brTarget)? 1'd1 : 1'd0;
+								end
+								else begin
+									{btbWrite, btbSrc} <= {1'd0, 2'd3};
+									flush <= (predictedPC != nextPC)? 1'd1 : 1'd0;
+								end
+							end
+							else if (opcode == `OPCODE_RTYPE && (func_code == `FUNC_JPR || func_code == `FUNC_JRL)) begin
+								{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd1, 1'd1};
+								flush <= (predictedPC != jrTarget)? 1'd1 : 1'd0;
+							end
+							else if (opcode == `OPCODE_JMP || opcode == `OPCODE_JAL) begin
+								{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd2, 1'd1};
+								flush <= (predictedPC != jumpAddr)? 1'd1 : 1'd0;
+							end
+							else begin
+								{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
+								flush <= 1'd0;
+							end
+						end
+						else begin
+							flush <= 1'd0; flush_EX <= 1'd1;
+							{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= (!d_cache_hit)? 5'b00000 : 5'b00111; // stall IF, ID
+							{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
+						end
+					end
+					ACCESS_D : begin 
+						if (!i_cache_hit) begin
 							flush <= 1'd0; flush_EX <= 1'd0;
 							{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
 							{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
 						end
-						2'b10 : begin
-							// next_control_state <= ACCESS_I;
-							flush <= 1'd0; flush_EX <= 1'd0;
-							{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00111; // stall IF, ID
-							{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
-						end
-						2'b11 : begin
-							// next_control_state <= (LWD_dependence_hazard)? HAZARD_STALL : RESET;
-							if (LWD_dependence_hazard) begin
-								flush <= 1'd0; flush_EX <= 1'd1; // flush_EX = 1
-								{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00011; // stall IF, ID, EX
-								{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
-							end
-							else begin
-								flush_EX <= 1'd0;
-								{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
-								if (opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ) begin
-									isPredict <= 1'd1;
-									if (bcond) begin
-										{btbWrite, btbSrc} <= {1'd1, 2'd0};
-										flush <= (predictedPC != brTarget)? 1'd1 : 1'd0;
-									end
-									else begin
-										{btbWrite, btbSrc} <= {1'd0, 2'd3};
-										flush <= (predictedPC != nextPC)? 1'd1 : 1'd0;
-									end
-								end
-								else if (opcode == `OPCODE_RTYPE && (func_code == `FUNC_JPR || func_code == `FUNC_JRL)) begin
-									{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd1, 1'd1};
-									flush <= (predictedPC != jrTarget)? 1'd1 : 1'd0;
-								end
-								else if (opcode == `OPCODE_JMP || opcode == `OPCODE_JAL) begin
-									{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd2, 1'd1};
-									flush <= (predictedPC != jumpAddr)? 1'd1 : 1'd0;
+						else if (d_ready) begin
+							flush_EX <= 1'd0;
+							{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
+							if (opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ) begin
+								isPredict <= 1'd1;
+								if (bcond) begin
+									{btbWrite, btbSrc} <= {1'd1, 2'd0};
+									flush <= (predictedPC != brTarget)? 1'd1 : 1'd0;
 								end
 								else begin
-									{btbWrite, btbSrc, flush, isPredict} <= {1'd0, 2'd0, 1'd0, 1'd0};
+									{btbWrite, btbSrc} <= {1'd0, 2'd3};
+									flush <= (predictedPC != nextPC)? 1'd1 : 1'd0;
 								end
 							end
-						end
-					endcase
-				end
-				ACCESS_I : begin
-					if (!d_cache_hit) begin
-						flush <= 1'd0; flush_EX <= 1'd1;
-						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
-						{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
-					end
-					else if (i_ready) begin
-						flush_EX <= 1'd1; // flush_EX <= 1'd1
-						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
-						if (opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ) begin
-							isPredict <= 1'd1;
-							if (bcond) begin
-								{btbWrite, btbSrc} <= {1'd1, 2'd0};
-								flush <= (predictedPC != brTarget)? 1'd1 : 1'd0;
+							else if (opcode == `OPCODE_RTYPE && (func_code == `FUNC_JPR || func_code == `FUNC_JRL)) begin
+								{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd1, 1'd1};
+								flush <= (predictedPC != jrTarget)? 1'd1 : 1'd0;
+							end
+							else if (opcode == `OPCODE_JMP || opcode == `OPCODE_JAL) begin
+								{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd2, 1'd1};
+								flush <= (predictedPC != jumpAddr)? 1'd1 : 1'd0;
 							end
 							else begin
-								{btbWrite, btbSrc} <= {1'd0, 2'd3};
-								flush <= (predictedPC != nextPC)? 1'd1 : 1'd0;
+								{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
+								flush <= 1'd0;
 							end
 						end
-						else if (opcode == `OPCODE_RTYPE && (func_code == `FUNC_JPR || func_code == `FUNC_JRL)) begin
-							{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd1, 1'd1};
-							flush <= (predictedPC != jrTarget)? 1'd1 : 1'd0;
-						end
-						else if (opcode == `OPCODE_JMP || opcode == `OPCODE_JAL) begin
-							{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd2, 1'd1};
-							flush <= (predictedPC != jumpAddr)? 1'd1 : 1'd0;
-						end
 						else begin
+							flush <= 1'd0; flush_EX <= 1'd0;
+							{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
 							{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
-							flush <= 1'd0;
 						end
 					end
-					else begin
-						flush <= 1'd0; flush_EX <= 1'd1;
-						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= (!d_cache_hit)? 5'b00000 : 5'b00111; // stall IF, ID
-						{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
-					end
-				end
-				ACCESS_D : begin 
-					if (!i_cache_hit) begin
-						flush <= 1'd0; flush_EX <= 1'd0;
-						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
-						{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
-					end
-					else if (d_ready) begin
-						flush_EX <= 1'd0;
-						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
-						if (opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ) begin
-							isPredict <= 1'd1;
-							if (bcond) begin
-								{btbWrite, btbSrc} <= {1'd1, 2'd0};
-								flush <= (predictedPC != brTarget)? 1'd1 : 1'd0;
-							end
-							else begin
-								{btbWrite, btbSrc} <= {1'd0, 2'd3};
-								flush <= (predictedPC != nextPC)? 1'd1 : 1'd0;
-							end
-						end
-						else if (opcode == `OPCODE_RTYPE && (func_code == `FUNC_JPR || func_code == `FUNC_JRL)) begin
-							{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd1, 1'd1};
-							flush <= (predictedPC != jrTarget)? 1'd1 : 1'd0;
-						end
-						else if (opcode == `OPCODE_JMP || opcode == `OPCODE_JAL) begin
-							{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd2, 1'd1};
-							flush <= (predictedPC != jumpAddr)? 1'd1 : 1'd0;
-						end
-						else begin
+					HAZARD_STALL : begin 
+						if (!d_cache_hit) begin
+							flush <= 1'd0; flush_EX <= 1'd1;
+							{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
 							{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
-							flush <= 1'd0;
-						end
-					end
-					else begin
-						flush <= 1'd0; flush_EX <= 1'd0;
-						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
-						{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
-					end
-				end
-				HAZARD_STALL : begin 
-					if (!d_cache_hit) begin
-						flush <= 1'd0; flush_EX <= 1'd1;
-						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
-						{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
-					end
-					else begin
-						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
-						flush_EX <= 1'd0;
-						if (opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ) begin
-							isPredict <= 1'd1;
-							if (bcond) begin
-								{btbWrite, btbSrc} <= {1'd1, 2'd0};
-								flush <= (predictedPC != brTarget)? 1'd1 : 1'd0;
-							end
-							else begin
-								{btbWrite, btbSrc} <= {1'd0, 2'd3};
-								flush <= (predictedPC != nextPC)? 1'd1 : 1'd0;
-							end
-						end
-						else if (opcode == `OPCODE_RTYPE && (func_code == `FUNC_JPR || func_code == `FUNC_JRL)) begin
-							{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd1, 1'd1};
-							flush <= (predictedPC != jrTarget)? 1'd1 : 1'd0;
-						end
-						else if (opcode == `OPCODE_JMP || opcode == `OPCODE_JAL) begin
-							{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd2, 1'd1};
-							flush <= (predictedPC != jumpAddr)? 1'd1 : 1'd0;
 						end
 						else begin
-							{btbWrite, btbSrc, flush, isPredict} <= {1'd0, 2'd0, 1'd0, 1'd0};
-						end
-					end
-				end
-				BOTH_I_D : begin
-					if (i_ready && d_ready) begin
-						flush_EX <= 1'd1;
-						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
-						if (opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ) begin
-							isPredict <= 1'd1;
-							if (bcond) begin
-								{btbWrite, btbSrc} <= {1'd1, 2'd0};
-								flush <= (predictedPC != brTarget)? 1'd1 : 1'd0;
+							{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
+							flush_EX <= 1'd0;
+							if (opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ) begin
+								isPredict <= 1'd1;
+								if (bcond) begin
+									{btbWrite, btbSrc} <= {1'd1, 2'd0};
+									flush <= (predictedPC != brTarget)? 1'd1 : 1'd0;
+								end
+								else begin
+									{btbWrite, btbSrc} <= {1'd0, 2'd3};
+									flush <= (predictedPC != nextPC)? 1'd1 : 1'd0;
+								end
+							end
+							else if (opcode == `OPCODE_RTYPE && (func_code == `FUNC_JPR || func_code == `FUNC_JRL)) begin
+								{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd1, 1'd1};
+								flush <= (predictedPC != jrTarget)? 1'd1 : 1'd0;
+							end
+							else if (opcode == `OPCODE_JMP || opcode == `OPCODE_JAL) begin
+								{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd2, 1'd1};
+								flush <= (predictedPC != jumpAddr)? 1'd1 : 1'd0;
 							end
 							else begin
-								{btbWrite, btbSrc} <= {1'd0, 2'd3};
-								flush <= (predictedPC != nextPC)? 1'd1 : 1'd0;
+								{btbWrite, btbSrc, flush, isPredict} <= {1'd0, 2'd0, 1'd0, 1'd0};
 							end
 						end
-						else if (opcode == `OPCODE_RTYPE && (func_code == `FUNC_JPR || func_code == `FUNC_JRL)) begin
-							{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd1, 1'd1};
-							flush <= (predictedPC != jrTarget)? 1'd1 : 1'd0;
-						end
-						else if (opcode == `OPCODE_JMP || opcode == `OPCODE_JAL) begin
-							{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd2, 1'd1};
-							flush <= (predictedPC != jumpAddr)? 1'd1 : 1'd0;
+					end
+					BOTH_I_D : begin
+						if (i_ready && d_ready) begin
+							flush_EX <= 1'd1;
+							{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
+							if (opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ) begin
+								isPredict <= 1'd1;
+								if (bcond) begin
+									{btbWrite, btbSrc} <= {1'd1, 2'd0};
+									flush <= (predictedPC != brTarget)? 1'd1 : 1'd0;
+								end
+								else begin
+									{btbWrite, btbSrc} <= {1'd0, 2'd3};
+									flush <= (predictedPC != nextPC)? 1'd1 : 1'd0;
+								end
+							end
+							else if (opcode == `OPCODE_RTYPE && (func_code == `FUNC_JPR || func_code == `FUNC_JRL)) begin
+								{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd1, 1'd1};
+								flush <= (predictedPC != jrTarget)? 1'd1 : 1'd0;
+							end
+							else if (opcode == `OPCODE_JMP || opcode == `OPCODE_JAL) begin
+								{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd2, 1'd1};
+								flush <= (predictedPC != jumpAddr)? 1'd1 : 1'd0;
+							end
+							else begin
+								{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
+								flush <= 1'd0;
+							end
 						end
 						else begin
+							flush <= 1'd0; flush_EX <= 1'd0;
+							{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
 							{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
-							flush <= 1'd0;
 						end
 					end
-					else begin
-						flush <= 1'd0; flush_EX <= 1'd0;
-						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
-						{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
-					end
-				end
-				BOTH_D_I : begin
-					if (i_ready && d_ready) begin
-						flush_EX <= 1'd0;
-						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
-						if (opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ) begin
-							isPredict <= 1'd1;
-							if (bcond) begin
-								{btbWrite, btbSrc} <= {1'd1, 2'd0};
-								flush <= (predictedPC != brTarget)? 1'd1 : 1'd0;
+					BOTH_D_I : begin
+						if (i_ready && d_ready) begin
+							flush_EX <= 1'd0;
+							{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // no stall
+							if (opcode == `OPCODE_BNE || opcode == `OPCODE_BEQ || opcode == `OPCODE_BGZ || opcode == `OPCODE_BLZ) begin
+								isPredict <= 1'd1;
+								if (bcond) begin
+									{btbWrite, btbSrc} <= {1'd1, 2'd0};
+									flush <= (predictedPC != brTarget)? 1'd1 : 1'd0;
+								end
+								else begin
+									{btbWrite, btbSrc} <= {1'd0, 2'd3};
+									flush <= (predictedPC != nextPC)? 1'd1 : 1'd0;
+								end
+							end
+							else if (opcode == `OPCODE_RTYPE && (func_code == `FUNC_JPR || func_code == `FUNC_JRL)) begin
+								{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd1, 1'd1};
+								flush <= (predictedPC != jrTarget)? 1'd1 : 1'd0;
+							end
+							else if (opcode == `OPCODE_JMP || opcode == `OPCODE_JAL) begin
+								{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd2, 1'd1};
+								flush <= (predictedPC != jumpAddr)? 1'd1 : 1'd0;
 							end
 							else begin
-								{btbWrite, btbSrc} <= {1'd0, 2'd3};
-								flush <= (predictedPC != nextPC)? 1'd1 : 1'd0;
+								{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
+								flush <= 1'd0;
 							end
 						end
-						else if (opcode == `OPCODE_RTYPE && (func_code == `FUNC_JPR || func_code == `FUNC_JRL)) begin
-							{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd1, 1'd1};
-							flush <= (predictedPC != jrTarget)? 1'd1 : 1'd0;
-						end
-						else if (opcode == `OPCODE_JMP || opcode == `OPCODE_JAL) begin
-							{btbWrite, btbSrc, isPredict} <= {1'd1, 2'd2, 1'd1};
-							flush <= (predictedPC != jumpAddr)? 1'd1 : 1'd0;
-						end
 						else begin
+							flush <= 1'd0; flush_EX <= 1'd0;
+							{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
 							{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
-							flush <= 1'd0;
 						end
 					end
-					else begin
-						flush <= 1'd0; flush_EX <= 1'd0;
-						{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
-						{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
-					end
-				end
-			endcase
+				endcase
+			end
 		end
 	end
 endmodule

@@ -86,7 +86,8 @@ module cache(
 	reg [`FETCH_SIZE-1:0] d_outputDataM;
 	reg d_readM;
 	reg d_writeM;
-
+	reg [`WORD_SIZE-1:0] i_addressM_reg; // address register for I-memory access
+	reg [`WORD_SIZE-1:0] d_addressM_reg; // address register for D-memory access
 
 	// FSM state
 	// parameters for states
@@ -111,13 +112,12 @@ module cache(
 	assign {i_tag, i_idx, i_blockOffset} = i_addressC;
 	assign {d_tag, d_idx, d_blockOffset} = d_addressC;
 	assign {i_dataC, d_dataC, i_dataM, d_dataM} = {i_outputDataC, d_outputDataC, i_outputDataM, d_outputDataM};
-	assign {i_addressM, d_addressM} = {i_addressC, d_addressC};
+	assign {i_addressM, d_addressM} = {i_addressM_reg, d_addressM_reg};
 
 	// update i_nextState, d_nextState
 	always @(*) begin
 		if (!reset_n) begin
-			i_nextState <= RESET;
-			d_nextState <= RESET;
+			{i_nextState, d_nextState} <= {RESET, RESET};
 		end
 		else begin
 			// update i_nextState 
@@ -213,8 +213,10 @@ module cache(
 			{i_ready, d_ready} <= 2'b00;
 			{next_i_accessCnt, next_d_accessCnt, next_i_hitCnt, next_d_hitCnt} <= {`WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0, `WORD_SIZE'd0}; // reset next_counter
 			{i_outputDataC, d_outputDataC, i_outputDataM, d_outputDataM} <= {`WORD_SIZE'dz, `WORD_SIZE'dz, `FETCH_SIZE'dz, `FETCH_SIZE'dz};
+			{i_addressM_reg, d_addressM_reg} <= {`WORD_SIZE'd0, `WORD_SIZE'd0};
 		end
 		else begin
+			i_addressM_reg <= i_addressC;
 			case (i_state)
 				RESET : begin
 					{i_readM, i_writeM} <= 2'b00;
@@ -252,6 +254,7 @@ module cache(
 					endcase
 				end
 			endcase
+
 			case (d_state)
 				RESET : begin
 					{d_readM, d_writeM} <= 2'b00;
@@ -260,7 +263,9 @@ module cache(
 						next_d_accessCnt <= d_accessCnt + `WORD_SIZE'd1;
 						// D-cache hit -> return d_dataC
 						if (d_tagBank[d_idx] == d_tag && d_valid[d_idx]) begin
-							d_cache_hit <= 1'd1; next_d_hitCnt <= d_hitCnt + `WORD_SIZE'd1;
+							d_cache_hit <= 1'd1; 
+							next_d_hitCnt <= d_hitCnt + `WORD_SIZE'd1;
+							d_addressM_reg <= d_addressC;
 							case (d_blockOffset)
 								2'd0 : d_outputDataC <= d_dataBank[d_idx][15:0];
 								2'd1 : d_outputDataC <= d_dataBank[d_idx][31:16];
@@ -269,6 +274,7 @@ module cache(
 							endcase
 						end
 						else begin
+							d_addressM_reg <= (d_dirty[d_idx])? {d_tagBank[d_idx], d_idx, 2'b00} : d_addressC;
 							d_cache_hit <= 1'd0;
 							d_outputDataC <= `WORD_SIZE'dz;
 						end
@@ -280,13 +286,16 @@ module cache(
 						if (d_tagBank[d_idx] == d_tag && d_valid[d_idx]) begin
 							d_cache_hit <= 1'b1; 
 							next_d_hitCnt <= d_hitCnt + `WORD_SIZE'd1;
+							d_addressM_reg <= d_addressC;
 						end
 						// D-cache miss
 						else begin
+							d_addressM_reg <= (d_dirty[d_idx])? {d_tagBank[d_idx], d_idx, 2'b00} : d_addressC;
 							d_cache_hit <= 1'b0;
 						end
 					end
 					else begin
+						d_addressM_reg <= d_addressC;
 						d_outputDataC <= `WORD_SIZE'dz;
 						d_cache_hit <= 1'd1;
 					end
@@ -294,6 +303,7 @@ module cache(
 				READ_M0 : begin
 					d_readM <= 1'd1;
 					d_outputDataM <= `FETCH_SIZE'dz;
+					d_addressM_reg <= d_addressC;
 				end
 				READ_M3 : begin
 					d_readM <= 1'd0;
