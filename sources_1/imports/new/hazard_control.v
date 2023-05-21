@@ -22,11 +22,11 @@ module hazard_control (
 	input is_halted, // signal indicating HLT instruction committed
 
 	// interface with cache
-	input i_cache_hit,
-	input d_cache_hit,
-	input i_ready,
-	input d_ready,
-	output both_access,
+	input i_cache_hit, // I-cache hit indicator
+	input d_cache_hit, // D-cache hit indicator
+	input i_ready, // referenced I-cache block ready signal
+	input d_ready, // referenced D-cache block ready signal
+	output both_access, // indicator that there are both I-cache, D-cache access
 
 	// WB destination from datapath
 	input [1:0] destEX, // WB register address in EX
@@ -54,7 +54,7 @@ module hazard_control (
 	// control signal for forwarding
 	output [1:0] forwardSrcA, // 1st forward source select signal
 	output [1:0] forwardSrcB, // 2nd forward source select signal
-	output flush_EX
+	output flush_EX // signal for EX stage flush
 ); 
 	// stage write enable IDWrite
 	reg PCWrite; reg IDWrite; reg EXWrite; reg MWrite; reg WBWrite;
@@ -76,7 +76,7 @@ module hazard_control (
 	reg [2:0] control_state;
 	reg [2:0] next_control_state;
 
-	// LWD hazard indicator
+	// checking data dependency
 	wire rs_dependence_EX; wire rs_dependence_M; wire rs_dependence_WB; // indicate whether there is data dependence on rs register
 	wire rt_dependence_EX; wire rt_dependence_M; wire rt_dependence_WB; // indicate whether there is data dependence on rt register
 	wire use_rs_ID; wire use_rt_ID; // indicate whether the instruction in ID stage uses rs or rt register.
@@ -97,7 +97,7 @@ module hazard_control (
 						 (rt_dependence_M && use_rt_ID)? 2'd2 :
 						 (rt_dependence_WB && use_rt_ID)? 2'd3 : 2'd0;
 
-	// transfer the hazard_control state to cache
+	// if control_state is BOTH_I_D or BOTH_D_I -> both_access = 1
 	assign both_access = (control_state == BOTH_I_D || control_state == BOTH_D_I);
 
 	// update next_control_state
@@ -109,36 +109,35 @@ module hazard_control (
 					if (LWD_dependence_hazard) next_control_state <= HAZARD_STALL;
 					else begin
 						casex ({d_cache_hit, i_cache_hit})
-							2'b0x : next_control_state <= ACCESS_D;
-							2'b10 : next_control_state <= (LWD_dependence_hazard)? HAZARD_STALL : ACCESS_I;
-							2'b11 : next_control_state <= (LWD_dependence_hazard)? HAZARD_STALL : RESET;
+							2'b0x : next_control_state <= ACCESS_D; // D-cache miss 
+							2'b10 : next_control_state <= (LWD_dependence_hazard)? HAZARD_STALL : ACCESS_I; // I-cache miss
+							2'b11 : next_control_state <= (LWD_dependence_hazard)? HAZARD_STALL : RESET; // cache hit both
 						endcase
 					end
 				end
 				ACCESS_I : begin
-					if (!d_cache_hit) next_control_state <= BOTH_I_D;
-					else if (i_ready) next_control_state <= RESET;
+					if (!d_cache_hit) next_control_state <= BOTH_I_D; // D-cache miss when already access I-cache -> move to BOTH_I_D
+					else if (i_ready) next_control_state <= RESET; // referenced I-cache block is ready -> move to RESET
 					else next_control_state <= ACCESS_I;
 				end
 				ACCESS_D : begin
-					if (!i_cache_hit) next_control_state <= BOTH_D_I;
-					else if (d_ready) next_control_state <= RESET;
+					if (!i_cache_hit) next_control_state <= BOTH_D_I; // I-cache miss when already access D-cache -> move to BOTH_D_I
+					else if (d_ready) next_control_state <= RESET; // referenced D-cache block is ready -> move to RESET
 					else next_control_state <= ACCESS_D;
 				end
 				HAZARD_STALL : next_control_state <= (!d_cache_hit)? ACCESS_D : RESET;
-				BOTH_I_D : next_control_state <= (i_ready && d_ready)? RESET : BOTH_I_D;
-				BOTH_D_I : next_control_state <= (i_ready && d_ready)? RESET : BOTH_D_I;
+				BOTH_I_D : next_control_state <= (i_ready && d_ready)? RESET : BOTH_I_D; // both referenced I-cache, D-cache blocks are ready -> move to RESET
+				BOTH_D_I : next_control_state <= (i_ready && d_ready)? RESET : BOTH_D_I; // both referenced I-cache, D-cache blocks are ready -> move to RESET
 			endcase
 		end
 	end
 
-	// update synchronously
+	// update current control_state according to next_control_state
 	always @(posedge clk, negedge reset_n) begin
 		if (!reset_n) control_state <= RESET;
-		else control_state <= next_control_state; // update current control_state
+		else control_state <= next_control_state;
 	end
 
-	// update signal asynchronously
 	always @(*) begin
 		if (!reset_n) begin
 			{PCWrite , IDWrite, EXWrite, MWrite, WBWrite} <= 5'b11111; // turn on all the write signals
@@ -153,11 +152,11 @@ module hazard_control (
 			end
 			else begin
 				// operate according to control_state
+				// update 5 write signals (PCWrite, IDWrite, EXWrite, MWrite, WBWRite) to control data flow
 				case (control_state)
 					RESET : begin
 						casex ({d_cache_hit, i_cache_hit})
 							2'b0x : begin
-								// next_control_state <= ACCESS_D;
 								flush <= 1'd0; flush_EX <= 1'd0;
 								{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00000; // stall all
 								{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
@@ -169,14 +168,12 @@ module hazard_control (
 									{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
 								end
 								else begin
-									// next_control_state <= ACCESS_I;
 									flush <= 1'd0; flush_EX <= 1'd0;
 									{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00111; // stall IF, ID
 									{btbWrite, btbSrc, isPredict} <= {1'd0, 2'd0, 1'd0};
 								end
 							end
 							2'b11 : begin
-								// next_control_state <= (LWD_dependence_hazard)? HAZARD_STALL : RESET;
 								if (LWD_dependence_hazard) begin
 									flush <= 1'd0; flush_EX <= 1'd1; // flush_EX = 1
 									{PCWrite, IDWrite, EXWrite, MWrite, WBWrite} <= 5'b00011; // stall IF, ID, EX

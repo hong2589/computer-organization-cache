@@ -1,7 +1,7 @@
 `include "opcodes.v"
 `define WORD_SIZE 16    // data and address word size
 `define FETCH_SIZE 64 // fetch size from memory (4 words = 64bits)
-`define BLOCK_NUM 4
+`define BLOCK_NUM 4 // # of blocks in one cache
 `define TAG_SIZE 12
 module cache(
 	input clk,
@@ -36,7 +36,8 @@ module cache(
 	output d_cache_hit, // D-cache hit indicator
 	output i_ready, // ready signal of I-cache block 
 	output d_ready, // ready signal of D-cache block
-	input both_access // indicator of the case that there is both I-cache and D-cache access
+	input both_access, // indicator of the case that there is both I-cache and D-cache access
+	input EXWrite // EXWrite signal from hazard_control to count cache access
 );
 	reg [`WORD_SIZE-1:0] i_hitCnt; // counter for I-cache hit
 	reg [`WORD_SIZE-1:0] d_hitCnt; // counter for D-cache hit
@@ -220,10 +221,11 @@ module cache(
 				RESET : begin
 					{i_readM, i_writeM} <= 2'b00; i_ready <= 1'd0;
 					if (i_readC) begin
-						next_i_accessCnt <= i_accessCnt + `WORD_SIZE'd1;
+						next_i_accessCnt <= (EXWrite)? i_accessCnt + `WORD_SIZE'd1 : i_accessCnt;
 						if (i_tagBank[i_idx] == i_tag && i_valid[i_idx]) begin
 							// I-cache hit -> return I-cache data
-							i_cache_hit <= 1'd1; next_i_hitCnt <= i_hitCnt + `WORD_SIZE'd1;
+							i_cache_hit <= 1'd1; 
+							next_i_hitCnt <= (EXWrite)? i_hitCnt + `WORD_SIZE'd1 : i_hitCnt;
 							case (i_blockOffset)
 								2'd0 : i_outputDataC <= i_dataBank[i_idx][15:0];
 								2'd1 : i_outputDataC <= i_dataBank[i_idx][31:16];
@@ -234,17 +236,38 @@ module cache(
 						else begin
 							i_cache_hit <= 1'd0;
 							i_outputDataC <= `WORD_SIZE'dz;
+							next_i_hitCnt <= i_hitCnt;
 						end
 					end
 					else begin
+						next_i_accessCnt <= i_accessCnt;
 						i_cache_hit <= 1'd1;
 						i_outputDataC <= `WORD_SIZE'dz;
+						next_i_hitCnt <= i_hitCnt;
 					end
 				end
-				READ_M0 : i_readM <= 1'd1; // read I-memory
+				READ_M0 : begin
+					i_readM <= 1'd1; // read I-memory
+					next_i_hitCnt <= i_hitCnt;
+					next_i_accessCnt <= i_accessCnt;
+				end
+				READ_M1 : begin
+					next_i_hitCnt <= i_hitCnt;
+					next_i_accessCnt <= i_accessCnt;
+				end
+				READ_M2 : begin
+					next_i_hitCnt <= i_hitCnt;
+					next_i_accessCnt <= i_accessCnt;
+				end
+				READ_M3 : begin
+					next_i_hitCnt <= i_hitCnt;
+					next_i_accessCnt <= i_accessCnt;
+				end
 				FETCH_READY : begin
 					// push I-cache data to datapath
 					i_ready <= 1'd1; 
+					next_i_hitCnt <= i_hitCnt;
+					next_i_accessCnt <= i_accessCnt;
 					case (i_blockOffset)
 						2'd0 : i_outputDataC <= i_dataBank[i_idx][15:0];
 						2'd1 : i_outputDataC <= i_dataBank[i_idx][31:16];
@@ -276,6 +299,7 @@ module cache(
 							d_addressM_reg <= (d_dirty[d_idx])? {d_tagBank[d_idx], d_idx, 2'b00} : d_addressC; // change D-memory address from tag, not cache address directly
 							d_cache_hit <= 1'd0;
 							d_outputDataC <= `WORD_SIZE'dz;
+							next_d_hitCnt <= d_hitCnt;
 						end
 					end
 					else if (d_writeC) begin
@@ -291,24 +315,41 @@ module cache(
 							// D-cache miss -> access D-memory
 							d_addressM_reg <= (d_dirty[d_idx])? {d_tagBank[d_idx], d_idx, 2'b00} : d_addressC;
 							d_cache_hit <= 1'b0;
+							next_d_hitCnt <= d_hitCnt;
 						end
 					end
 					else begin
+						next_d_accessCnt <= d_accessCnt;
 						d_addressM_reg <= d_addressC;
 						d_outputDataC <= `WORD_SIZE'dz;
 						d_cache_hit <= 1'd1;
+						next_d_hitCnt <= d_hitCnt;
 					end
 				end
 				READ_M0 : begin
 					d_readM <= 1'd1;
 					d_outputDataM <= `FETCH_SIZE'dz;
 					d_addressM_reg <= d_addressC;
+					next_d_hitCnt <= d_hitCnt;
+					next_d_accessCnt <= d_accessCnt;
+				end
+				READ_M1 : begin
+					next_d_hitCnt <= d_hitCnt;
+					next_d_accessCnt <= d_accessCnt;
+				end
+				READ_M2 : begin
+					next_d_hitCnt <= d_hitCnt;
+					next_d_accessCnt <= d_accessCnt;
 				end
 				READ_M3 : begin
 					d_readM <= 1'd0;
+					next_d_hitCnt <= d_hitCnt;
+					next_d_accessCnt <= d_accessCnt;
 				end
 				FETCH_READY : begin
-					d_ready <= 1'd1; // d_cache_hit <= 1'd1;
+					d_ready <= 1'd1;
+					next_d_hitCnt <= d_hitCnt;
+					next_d_accessCnt <= d_accessCnt;
 					// fetch data to datapath
 					case (d_blockOffset)
 						2'd0 : d_outputDataC <= d_dataBank[d_idx][15:0];
@@ -317,18 +358,31 @@ module cache(
 						2'd3 : d_outputDataC <= d_dataBank[d_idx][63:48];
 					endcase
 				end 
-				WRITE_M0 : d_writeM <= 1'd1;
+				WRITE_M0 : begin
+					d_writeM <= 1'd1;
+					next_d_hitCnt <= d_hitCnt;
+					next_d_accessCnt <= d_accessCnt;
+				end
+				WRITE_M1 : begin
+					next_d_hitCnt <= d_hitCnt;
+					next_d_accessCnt <= d_accessCnt;
+				end
+				WRITE_M2 : begin
+					next_d_hitCnt <= d_hitCnt;
+					next_d_accessCnt <= d_accessCnt;
+				end
 				WRITE_M3 : begin
 					d_outputDataM <= d_dataBank[d_idx]; // transfer data to memory
 					d_writeM <= 1'd0;
+					next_d_hitCnt <= d_hitCnt;
+					next_d_accessCnt <= d_accessCnt;
 				end
 				WRITE_READY : begin
-					d_ready <= 1'd1; // d_cache_hit <= 1'd1;
+					d_ready <= 1'd1; 
+					next_d_hitCnt <= d_hitCnt;
+					next_d_accessCnt <= d_accessCnt;
 				end
 			endcase
 		end
 	end
-
-
-
 endmodule

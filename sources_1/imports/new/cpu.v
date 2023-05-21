@@ -75,18 +75,18 @@ module cpu(
 	wire [`WORD_SIZE-1:0] jrTarget; // 1st register file value referenced by $rs
 	wire [`WORD_SIZE-1:0] jumpAddr; // jump address
 	wire [3:0] opcode_EX; // opcode of the instruction in EX stage
-	wire [3:0] opcode_M;
-	wire [3:0] opcode_WB;
+	wire [3:0] opcode_M; // opcode of the instruction in MEM stage
+	wire [3:0] opcode_WB; // opcode of the instruction in WB stage
 
 	// cache - datapath interface
 	wire i_readC; wire i_writeC; wire [`WORD_SIZE-1:0] i_addressC; wire [`WORD_SIZE-1:0] i_dataC;
 	wire d_readC; wire d_writeC; wire [`WORD_SIZE-1:0] d_addressC; wire [`WORD_SIZE-1:0] d_dataC;
 	// cache hit indicator
 	wire i_cache_hit; wire d_cache_hit;
+	// cache block ready indicator
 	wire i_ready; wire d_ready;
+	// indicator of the case that there are both I-cache, D-cache access
 	wire both_access; 
-
-	// assign {i_address, i_data, d_address, d_data} = {i_addressM, i_dataM, d_addressM, d_dataM};
 
 	// In cpu module, three submodules interact each other - datapath, control_unit, and hazard_control.
 
@@ -248,7 +248,8 @@ module cpu(
 		.d_cache_hit(d_cache_hit),
 		.i_ready(i_ready),
 		.d_ready(d_ready),
-		.both_access(both_access)
+		.both_access(both_access),
+		.EXWrite(EXWrite)
 	);
 
 endmodule

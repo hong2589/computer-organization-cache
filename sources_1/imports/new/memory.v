@@ -33,19 +33,23 @@ module Memory(
 	parameter STORE3 = 4'h8;
 
 	// state register
+	// I-memory
 	reg [3:0] i_stateM;
 	reg [3:0] i_nextStateM;
+	// D-memory
 	reg [3:0] d_stateM;
 	reg [3:0] d_nextStateM;
 
+	// memory
 	reg [`WORD_SIZE-1:0] memory [0:`MEMORY_SIZE-1];
-	reg [`FETCH_SIZE-1:0] i_outputData;
-	reg [`FETCH_SIZE-1:0] d_outputData;
 
-	wire [`WORD_SIZE-1:0] i_effective_address;
+	reg [`FETCH_SIZE-1:0] i_outputData; // output I-memory data to cache
+	reg [`FETCH_SIZE-1:0] d_outputData; // output D-memory data to cache
+
+	wire [`WORD_SIZE-1:0] i_effective_address; 
 	wire [`WORD_SIZE-1:0] d_effective_address;
 	
-	// fetch instruction & data
+	// assign data bus
 	assign i_data = i_outputData;
 	assign d_data = d_outputData;
 
@@ -60,7 +64,7 @@ module Memory(
 		end
 		else begin
 			case (i_stateM)
-				RESET : i_nextStateM <= (i_readM)? FETCH0 : RESET;
+				RESET : i_nextStateM <= (i_readM)? FETCH0 : RESET; // i_readM = 1 -> move to FETCH0
 				FETCH0 : i_nextStateM <= FETCH1;
 				FETCH1 : i_nextStateM <= FETCH2;
 				FETCH2 : i_nextStateM <= FETCH3;
@@ -68,18 +72,18 @@ module Memory(
 			endcase
 			case (d_stateM)
 				RESET : begin
-					if (d_readM) d_nextStateM <= FETCH0;
-					else if (d_writeM) d_nextStateM <= STORE0;
+					if (d_readM) d_nextStateM <= FETCH0; // d_readM = 1 -> move to FETCH0
+					else if (d_writeM) d_nextStateM <= STORE0; // d_writeM = 1 -> move to STORE9
 					else d_nextStateM <= RESET;
 				end
 				FETCH0 : d_nextStateM <= FETCH1;
 				FETCH1 : d_nextStateM <= FETCH2;
 				FETCH2 : d_nextStateM <= FETCH3;
-				FETCH3 : d_nextStateM <= (d_writeM)? STORE0 : RESET;
+				FETCH3 : d_nextStateM <= (d_writeM)? STORE0 : RESET; // d_writeM = 1 -> move to STORE9
 				STORE0 : d_nextStateM <= STORE1;
 				STORE1 : d_nextStateM <= STORE2;
 				STORE2 : d_nextStateM <= STORE3;
-				STORE3 : d_nextStateM <= (d_readM)? FETCH0 : RESET;
+				STORE3 : d_nextStateM <= (d_readM)? FETCH0 : RESET; // d_readM = 1 -> move to FETCH0
 			endcase
 		end
 	end
@@ -97,7 +101,7 @@ module Memory(
 			if (i_stateM == FETCH2) i_outputData <= {memory[i_effective_address+3], memory[i_effective_address+2], memory[i_effective_address+1], memory[i_effective_address]};
 			else i_outputData <= `FETCH_SIZE'dz;
 
-			// update d_outputData
+			// update d_outputData, store d_data to memory
 			if (d_stateM == FETCH2) d_outputData <= {memory[d_effective_address+3], memory[d_effective_address+2], memory[d_effective_address+1], memory[d_effective_address]};
 			else if (d_stateM == STORE2) {memory[d_effective_address+3], memory[d_effective_address+2], memory[d_effective_address+1], memory[d_effective_address]} <= d_data;
 			else d_outputData <= `FETCH_SIZE'dz;

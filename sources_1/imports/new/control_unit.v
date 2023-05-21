@@ -20,8 +20,6 @@ module control_unit (
 	output i_readC, // read enable signal to i-mem
     
 	// ID
-	output isWWD_EX,
-	output isWWD_M,
 	output isWWD_WB, // assert output_port = RF[$0]
 
 	// EX
